@@ -307,11 +307,13 @@ private fun HomeTile(vm: AppViewModel, modifier: Modifier) {
     ) {
         Cookie(46.dp, C.AccentDeep, shape = Cookie12) { Text("🏠", fontSize = 21.sp) }
         Column {
-            Text("Home", color = C.OnAccent.copy(alpha = 0.75f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            val atHome = h != null && vm.homeMinutes == 0
+            // At home: small "You're" on top, big "Home" below. Otherwise: small "Home", big drive time.
+            Text(if (atHome) "You're" else "Home", color = C.OnAccent.copy(alpha = 0.75f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             Text(
                 when {
                     h == null -> "Set home"
-                    vm.homeMinutes == 0 -> "You're home"
+                    atHome -> "Home"
                     vm.homeMinutes != null -> "${vm.homeMinutes} min"
                     else -> distanceTo(vm, h) ?: "Go"
                 },
