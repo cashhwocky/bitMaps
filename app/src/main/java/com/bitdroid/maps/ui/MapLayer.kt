@@ -137,6 +137,12 @@ class MapController(private val context: Context, private val pal: MapPalette) {
         }
     }
 
+    /** Line width that grows as you zoom in, so the route stays bold and smooth up close. */
+    private fun byZoom(at12: Float, at19: Float): Expression = Expression.interpolate(
+        Expression.exponential(1.4f), Expression.zoom(),
+        Expression.stop(12f, at12), Expression.stop(19f, at19),
+    )
+
     private fun addOverlays(s: Style) {
         val firstLabel = s.layers.firstOrNull { it is SymbolLayer }?.id
         fun below(layer: Layer) { if (firstLabel != null) s.addLayerBelow(layer, firstLabel) else s.addLayer(layer) }
