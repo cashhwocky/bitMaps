@@ -11,3 +11,4 @@ captures/
 *.jks
 *.keystore
 app/src/main/assets/voices/
+app/libs/

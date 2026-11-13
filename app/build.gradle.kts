@@ -96,7 +96,7 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     // Natural offline voices (Piper models) and unpacking downloaded voices.
-    implementation("com.k2fsa.sherpa.onnx:sherpa-onnx-android:1.13.2")
+    implementation(files("libs/sherpa-onnx.aar")) // downloaded by CI, see .github/workflows/build.yml
     implementation("org.apache.commons:commons-compress:1.27.1")
 
     testImplementation("junit:junit:4.13.2")

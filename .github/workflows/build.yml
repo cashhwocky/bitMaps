@@ -30,6 +30,20 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
+      # Voice engine (sherpa-onnx) ships as an .aar on its GitHub releases.
+      - name: Fetch voice engine
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p app/libs
+          json=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/k2-fsa/sherpa-onnx/releases/latest)
+          echo "$json" | jq -r '.tag_name'
+          echo "$json" | jq -r '.assets[].name' | grep -i aar || true
+          url=$(echo "$json" | jq -r '.assets[] | select(.name|test("^sherpa-onnx-v?[0-9.]+\\.aar$")) | .browser_download_url' | head -1)
+          echo "aar: $url"
+          curl -fsSL -o app/libs/sherpa-onnx.aar "$url"
+          ls -la app/libs
+
       # Bundle the default natural voice (Amy, Piper via sherpa-onnx) into the APK.
       - name: Fetch built-in voice
         run: |

@@ -147,8 +147,67 @@ fun Pill(text: String, color: Color, background: Color) {
     )
 }
 
-/** Emoji + soft tint for a kind of place. */
-fun placeEmoji(kind: String): Pair<String, Color> = when (kind) {
+/** Food emoji that matches what a place sells, from its OSM type, well-known chains and words in its name. */
+fun foodEmoji(kind: String, name: String): String? {
+    val n = name.lowercase()
+    fun has(vararg w: String) = w.any { n.contains(it) }
+    when (kind) {
+        "ice_cream" -> return "🍦"
+        "bakery", "pastry" -> return if (has("donut", "doughnut")) "🍩" else "🥐"
+        "cafe", "coffee" -> return if (has("donut", "doughnut", "dunkin", "krispy")) "🍩" else if (has("tea", "boba")) "🧋" else "☕"
+        "bar", "pub", "biergarten" -> return if (has("wine")) "🍷" else "🍺"
+        "confectionery", "chocolate" -> return "🍫"
+        "butcher" -> return "🥩"
+        "seafood" -> return "🦞"
+        "alcohol", "wine" -> return "🍷"
+    }
+    if (kind !in setOf("restaurant", "fast_food", "food_court", "cafe", "deli", "food")) return null
+    return when {
+        has("pizza", "domino", "papa john", "little caesar", "papa murphy", "marco's", "hungry howie") -> "🍕"
+        has("taco", "chipotle", "qdoba", "moe's", "burrito", "mexican", "cantina", "tex-mex", "los ") -> "🌮"
+        has("sushi", "ramen", "japanese", "hibachi", "teriyaki", "poke") -> "🍣"
+        has("chinese", "panda express", "wok", "dragon", "china", "szechuan", "dumpling") -> "🥡"
+        has("thai", "pho", "vietnam", "noodle") -> "🍜"
+        has("indian", "curry", "tandoori", "masala") -> "🍛"
+        has("chick-fil-a", "chick fil a", "kfc", "popeyes", "bojangles", "raising cane", "zaxby", "wingstop", "wings", "chicken", "church's") -> "🍗"
+        has("subway", "jersey mike", "jimmy john", "firehouse sub", "potbelly", "sandwich", "sub ", "subs", "deli") -> "🥪"
+        has("dunkin", "krispy", "donut", "doughnut") -> "🍩"
+        has("starbucks", "coffee", "espresso", "cafe", "café") -> "☕"
+        has("dairy queen", "ice cream", "frozen yogurt", "froyo", "baskin", "cold stone", "gelato", "rita's") -> "🍦"
+        has("boba", "bubble tea", "tea house") -> "🧋"
+        has("smoothie", "juice", "tropical smoothie") -> "🥤"
+        has("bbq", "barbecue", "smokehouse", "brisket") -> "🍖"
+        has("steak", "outback", "longhorn", "texas roadhouse") -> "🥩"
+        has("seafood", "crab", "lobster", "oyster", "fish", "red lobster", "captain d") -> "🦞"
+        has("waffle", "ihop", "pancake", "denny", "breakfast", "cracker barrel", "brunch") -> "🥞"
+        has("bagel") -> "🥯"
+        has("bakery", "bread", "panera") -> "🥖"
+        has("salad", "sweetgreen", "vegan", "vegetarian") -> "🥗"
+        has("hot dog", "hotdog", "frank") -> "🌭"
+        has("greek", "gyro", "mediterranean", "kebab", "shawarma", "falafel") -> "🥙"
+        has("italian", "pasta", "olive garden", "spaghetti", "trattoria") -> "🍝"
+        has("mcdonald", "burger", "wendy", "five guys", "sonic", "hardee", "carl's", "jack in the box", "whataburger", "culver", "shake shack", "smashburger", "cook out", "checkers", "rally's", "white castle", "in-n-out", "steak n shake") -> "🍔"
+        kind == "fast_food" -> "🍔"
+        else -> "🍽️"
+    }
+}
+
+/** Emoji + soft tint for a kind of place (food places get an emoji for what they sell). */
+fun placeEmoji(kind: String, name: String = ""): Pair<String, Color> {
+    foodEmoji(kind, name)?.let { e ->
+        val tint = when (e) {
+            "☕", "🥐", "🥖", "🥯", "🥞", "🍩" -> Color(0xFFFDBA74)
+            "🍦", "🧋", "🥤", "🍫" -> Color(0xFFF9A8D4)
+            "🥗", "🥙" -> C.Green
+            "🍺", "🍷" -> Color(0xFFFDE68A)
+            else -> Color(0xFFFCA5A5)
+        }
+        return e to tint
+    }
+    return basicEmoji(kind)
+}
+
+private fun basicEmoji(kind: String): Pair<String, Color> = when (kind) {
     "cafe", "coffee" -> "☕" to Color(0xFFFDBA74)
     "restaurant", "food_court" -> "🍽️" to Color(0xFFFCA5A5)
     "fast_food" -> "🍔" to Color(0xFFFCA5A5)
@@ -176,8 +235,8 @@ fun placeEmoji(kind: String): Pair<String, Color> = when (kind) {
 }
 
 @Composable
-fun PlaceIcon(kind: String, size: Dp = 46.dp) {
-    val (emoji, tint) = placeEmoji(kind)
+fun PlaceIcon(kind: String, size: Dp = 46.dp, name: String = "") {
+    val (emoji, tint) = placeEmoji(kind, name)
     Box(
         Modifier
             .size(size)
@@ -198,7 +257,7 @@ fun PlaceRow(place: Place, trailing: String?, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        PlaceIcon(place.kind)
+        PlaceIcon(place.kind, name = place.name)
         Column(Modifier.weight(1f)) {
             Text(place.name, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val sub = listOf(place.category, place.detail).filter { it.isNotBlank() }.joinToString(" · ")

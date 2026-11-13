@@ -323,7 +323,7 @@ private fun BoxScope.PlaceScreen(vm: AppViewModel) {
     Sheet(Modifier.align(Alignment.BottomCenter)) {
         Column(Modifier.navigationBarsPadding().padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                PlaceIcon(p.kind, 52.dp)
+                PlaceIcon(p.kind, 52.dp, name = p.name)
                 Column(Modifier.weight(1f)) {
                     Text(p.name, fontFamily = Display, fontWeight = FontWeight.Bold, fontSize = 22.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     val sub = listOfNotNull(p.category.ifBlank { null }, distanceTo(vm, p)).joinToString(" · ")
