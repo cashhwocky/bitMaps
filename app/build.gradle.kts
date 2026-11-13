@@ -19,7 +19,7 @@ android {
         minSdk = 31
         targetSdk = 35
         versionCode = 2
-        versionName = "0.2.0"
+        versionName = "0.1.0"
 
         // Pixels are arm64 only; keeping one ABI keeps the APK (map engine + voice engine) small.
         ndk { abiFilters += listOf("arm64-v8a") }
