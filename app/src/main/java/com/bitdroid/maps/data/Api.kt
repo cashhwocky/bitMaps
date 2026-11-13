@@ -204,7 +204,17 @@ object Census {
     /** Looks like "123 Something …" (a house number and a street). */
     fun looksLikeAddress(q: String): Boolean = Regex("""^\s*\d+[A-Za-z]?\s+\S+.*""").matches(q) && q.trim().split(Regex("\\s+")).size >= 3
 
-    suspend fun search(q: String): List<Place> {
+    /**
+     * Tries the address as typed; if the Census needs a city/state, retries with [area]
+     * (where you are now, e.g. "Whitsett, NC").
+     */
+    suspend fun search(q: String, area: String?): List<Place> {
+        val first = runCatching { lookup(q) }.getOrDefault(emptyList())
+        if (first.isNotEmpty() || area.isNullOrBlank() || q.contains(',')) return first
+        return runCatching { lookup("$q, $area") }.getOrDefault(emptyList())
+    }
+
+    private suspend fun lookup(q: String): List<Place> {
         val url = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress" +
             "?address=${Http.enc(q)}&benchmark=Public_AR_Current&format=json"
         val matches = JSONObject(Http.get(url)).optJSONObject("result")?.optJSONArray("addressMatches") ?: return emptyList()
@@ -232,4 +242,41 @@ object Census {
     }
 
     private fun String.titleCase() = lowercase().split(' ').joinToString(" ") { w -> w.replaceFirstChar { it.titlecase() } }
+}
+
+/**
+ * Nominatim (OpenStreetMap's own search). Knows US house numbers from the official road
+ * data even where the map is missing them. Used only for addresses, once per search.
+ */
+object Nominatim {
+    suspend fun address(q: String, near: LatLon?): List<Place> {
+        val sb = StringBuilder("https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5&q=${Http.enc(q)}")
+        if (near != null) {
+            val d = 0.6
+            sb.append(String.format(Locale.US, "&viewbox=%.4f,%.4f,%.4f,%.4f", near.lon - d, near.lat + d, near.lon + d, near.lat - d))
+        }
+        val arr = JSONArray(Http.get(sb.toString()))
+        val out = ArrayList<Place>()
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            val a = o.optJSONObject("address") ?: JSONObject()
+            val house = a.optString("house_number")
+            val road = a.optString("road")
+            val street = listOf(house, road).filter { it.isNotBlank() }.joinToString(" ")
+            val city = a.optString("city").ifBlank { a.optString("town").ifBlank { a.optString("village").ifBlank { a.optString("hamlet") } } }
+            val name = street.ifBlank { o.optString("name").ifBlank { o.optString("display_name").substringBefore(',') } }
+            out.add(
+                Place(
+                    id = "nom:${o.optString("osm_type")}${o.optLong("osm_id")}:$house",
+                    name = name,
+                    detail = listOf(city, a.optString("state"), a.optString("postcode")).filter { it.isNotBlank() }.joinToString(", "),
+                    category = if (house.isNotBlank()) "Address" else o.optString("type").replace('_', ' ').replaceFirstChar { it.titlecase() },
+                    kind = if (house.isNotBlank()) "house" else o.optString("type"),
+                    lat = o.getString("lat").toDouble(),
+                    lon = o.getString("lon").toDouble(),
+                ),
+            )
+        }
+        return out
+    }
 }

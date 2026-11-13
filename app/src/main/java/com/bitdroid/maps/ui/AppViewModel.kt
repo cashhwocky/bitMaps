@@ -9,6 +9,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.bitdroid.maps.data.Census
+import com.bitdroid.maps.data.Nominatim
 import com.bitdroid.maps.data.Geo
 import com.bitdroid.maps.data.LatLon
 import com.bitdroid.maps.data.Mode
@@ -245,7 +246,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------- search ----------
 
-    fun openSearch() { screen = Screen.SEARCH }
+    fun openSearch() {
+        screen = Screen.SEARCH
+        refreshTiles()
+    }
 
     /** Result of the mic button on the search bar. */
     fun voiceQuery(text: String) {
@@ -261,12 +265,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             delay(300)
             runSearch {
                 if (!Census.looksLikeAddress(q)) return@runSearch Photon.search(q, here())
-                // Addresses: ask OpenStreetMap and the US Census at the same time; exact house matches go first.
+                // Addresses: ask OpenStreetMap, the US Census and Nominatim together; exact house matches go first.
                 coroutineScope {
                     val osm = async { runCatching { Photon.search(q, here()) }.getOrDefault(emptyList()) }
-                    val census = async { delay(250); runCatching { Census.search(q) }.getOrDefault(emptyList()) }
-                    val c = census.await()
-                    c + osm.await().filter { p -> c.none { Geo.distance(it.pos, p.pos) < 30 } }
+                    val census = async { delay(250); Census.search(q, hereName) }
+                    val nom = async { delay(400); runCatching { Nominatim.address(q, here()) }.getOrDefault(emptyList()) }
+                    val exact = ArrayList<Place>()
+                    for (p in census.await() + nom.await().filter { it.kind == "house" }) {
+                        if (exact.none { Geo.distance(it.pos, p.pos) < 40 }) exact.add(p)
+                    }
+                    exact + osm.await().filter { p -> exact.none { Geo.distance(it.pos, p.pos) < 30 } }
                 }
             }
         }
@@ -286,8 +294,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val found = block()
             val me = here()
             // Exact address matches stay on top; everything else is sorted by distance.
-            val exact = found.filter { it.id.startsWith("census:") }
-            val rest = found.filterNot { it.id.startsWith("census:") }
+            fun exactMatch(p: Place) = p.id.startsWith("census:") || (p.id.startsWith("nom:") && p.kind == "house")
+            val exact = found.filter(::exactMatch)
+            val rest = found.filterNot(::exactMatch)
             results = exact + if (me != null && !keepOrder) rest.sortedBy { Geo.distance(me, it.pos) } else rest
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
