@@ -49,13 +49,38 @@ class LocationTracker(private val context: Context) {
         lm.removeUpdates(listener)
     }
 
-    private fun offer(loc: Location) {
+    private var lastBearing: Float? = null
+
+    private fun offer(raw: Location) {
         val now = System.currentTimeMillis()
-        if (loc.provider == LocationManager.GPS_PROVIDER) {
-            lastGpsAt = now
-            _location.value = loc
-        } else if (now - lastGpsAt > 5000) {
-            _location.value = loc
+        if (raw.provider == LocationManager.GPS_PROVIDER) lastGpsAt = now
+        else if (now - lastGpsAt <= 5000) return
+        _location.value = steady(raw)
+    }
+
+    /**
+     * GPS wobbles a few meters and guesses a new heading every second when you stand still.
+     * When you're stopped: keep the dot where it was (unless it clearly moved) and keep the last
+     * real heading, so the arrow doesn't spin or jitter.
+     */
+    private fun steady(raw: Location): Location {
+        val loc = Location(raw)
+        val moving = raw.hasSpeed() && raw.speed >= 1.5f
+        if (moving && raw.hasBearing()) lastBearing = raw.bearing
+        val bearing = lastBearing
+        if (!moving) {
+            if (bearing != null) loc.bearing = bearing else loc.removeBearing()
+            val prev = _location.value
+            if (prev != null) {
+                val jump = prev.distanceTo(raw)
+                val noise = maxOf(raw.accuracy, 8f)
+                if (jump < noise) {
+                    // Same place, fresher time: keep the old position.
+                    loc.latitude = prev.latitude
+                    loc.longitude = prev.longitude
+                }
+            }
         }
+        return loc
     }
 }

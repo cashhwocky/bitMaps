@@ -301,7 +301,7 @@ class MapController(private val context: Context) {
                     .build(),
             )
             lc.isLocationComponentEnabled = true
-            lc.renderMode = RenderMode.COMPASS
+            lc.renderMode = RenderMode.NORMAL
             lc.addOnCameraTrackingChangedListener(object : OnCameraTrackingChangedListener {
                 override fun onCameraTrackingDismissed() { isFollowing = false; onTrackingDismissed?.invoke() }
                 override fun onCameraTrackingChanged(currentMode: Int) {}
@@ -340,7 +340,7 @@ class MapController(private val context: Context) {
         isFollowing = false
         if (!locationOn) return
         m.locationComponent.cameraMode = CameraMode.NONE
-        m.locationComponent.renderMode = RenderMode.COMPASS
+        m.locationComponent.renderMode = RenderMode.NORMAL
         m.moveCamera(CameraUpdateFactory.newCameraPosition(CameraPosition.Builder(m.cameraPosition).padding(0.0, 0.0, 0.0, 0.0).build()))
     }
 }
