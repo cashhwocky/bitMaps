@@ -1,0 +1,33 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Navigation puck over the night city background (same spot as the icon art) -->
+    <path android:pathData="M54,73.8m-8.6,0a8.6,8.6 0,1 1,17.2 0a8.6,8.6 0,1 1,-17.2 0">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial" android:centerX="54" android:centerY="73.8" android:gradientRadius="8.6">
+                <item android:offset="0.6" android:color="#597C4DFF" />
+                <item android:offset="1" android:color="#007C4DFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M54,73.8m-5.9,0a5.9,5.9 0,1 1,11.8 0a5.9,5.9 0,1 1,-11.8 0" />
+    <group android:pivotX="54" android:pivotY="73.8" android:rotation="-60">
+        <path android:strokeWidth="0.4" android:strokeLineJoin="round"
+            android:pathData="M54,70.28 L56.67,76.61 L54,75.35 L51.33,76.61 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient android:type="linear" android:startX="51" android:startY="77" android:endX="57" android:endY="70">
+                    <item android:offset="0" android:color="#FF7C4DFF" />
+                    <item android:offset="1" android:color="#FF2F6BFF" />
+                </gradient>
+            </aapt:attr>
+            <aapt:attr name="android:strokeColor">
+                <gradient android:type="linear" android:startX="51" android:startY="77" android:endX="57" android:endY="70">
+                    <item android:offset="0" android:color="#FF7C4DFF" />
+                    <item android:offset="1" android:color="#FF2F6BFF" />
+                </gradient>
+            </aapt:attr>
+        </path>
+    </group>
+</vector>

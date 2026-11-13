@@ -1,0 +1,26 @@
+// Drop this folder into your bitDroid tree (e.g. packages/apps/bitMaps/)
+// together with bitMaps.apk from the latest GitHub release, then add
+//   PRODUCT_PACKAGES += bitMaps
+// to your product makefile.
+//
+// - permissions/default-permissions-bitmaps.xml grants location on first boot.
+// - overlay/config.xml gives bitMaps notification access on first boot, so the
+//   music card works without the user digging through settings.
+
+android_app_import {
+    name: "bitMaps",
+    apk: "bitMaps.apk",
+    presigned: true,
+    product_specific: true,
+    dex_preopt: {
+        enabled: true,
+    },
+    required: ["default-permissions-bitmaps.xml"],
+}
+
+prebuilt_etc {
+    name: "default-permissions-bitmaps.xml",
+    src: "permissions/default-permissions-bitmaps.xml",
+    sub_dir: "default-permissions",
+    product_specific: true,
+}

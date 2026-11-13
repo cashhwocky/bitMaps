@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Install to $(TARGET_COPY_OUT_PRODUCT)/etc/default-permissions/ so bitDroid grants these on first boot. -->
+<exceptions>
+    <exception package="com.bitdroid.maps">
+        <permission name="android.permission.ACCESS_FINE_LOCATION" fixed="false" />
+        <permission name="android.permission.ACCESS_COARSE_LOCATION" fixed="false" />
+    </exception>
+</exceptions>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Add to your device/vendor overlay of frameworks/base/core/res/res/values/config.xml.
+     Grants bitMaps notification-listener access on first boot (used only to read media sessions
+     for the music card). If you already set this value, append ":com.bitdroid.maps" to it. -->
+<resources>
+    <string name="config_defaultListenerAccessPackages" translatable="false">com.bitdroid.maps</string>
+</resources>

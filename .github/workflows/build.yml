@@ -1,0 +1,83 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Upload the APK to this existing release (e.g. v0.1.0). Leave empty to just build."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # The runner image ships the Android SDK; just accept licenses so AGP can fetch platform 35 if needed.
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # Optional release signing. Add these repo secrets to sign with your own key:
+      # BITMAPS_KEYSTORE_B64 (base64 of the .jks), BITMAPS_KEYSTORE_PASSWORD,
+      # BITMAPS_KEY_ALIAS, BITMAPS_KEY_PASSWORD. Without them the release APK is debug-signed.
+      - name: Decode signing key
+        env:
+          KS_B64: ${{ secrets.BITMAPS_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/bitmaps.jks"
+            echo "BITMAPS_KEYSTORE=$RUNNER_TEMP/bitmaps.jks" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build
+        env:
+          BITMAPS_KEYSTORE_PASSWORD: ${{ secrets.BITMAPS_KEYSTORE_PASSWORD }}
+          BITMAPS_KEY_ALIAS: ${{ secrets.BITMAPS_KEY_ALIAS }}
+          BITMAPS_KEY_PASSWORD: ${{ secrets.BITMAPS_KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon testDebugUnitTest assembleDebug assembleRelease
+
+      - name: Check tag matches versionName
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
+        env:
+          TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          want="${TAG#v}"
+          ls app/build/outputs/apk/release/ | grep -q "bitMaps-${want}-release.apk" || {
+            echo "::error::Tag $TAG does not match versionName in app/build.gradle.kts"; exit 1; }
+
+      - name: Collect APKs
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/release/*.apk out/
+          cp app/build/outputs/apk/debug/*.apk out/
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bitMaps-apks
+          path: out/*.apk
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          files: out/*-release.apk
+          generate_release_notes: true
