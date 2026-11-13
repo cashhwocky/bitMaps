@@ -74,6 +74,9 @@ class MapController(private val context: Context) {
         style = s
         recolor(s)
         addOverlays(s)
+        m.addOnCameraMoveStartedListener { reason ->
+            if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) userMoved = true
+        }
         m.uiSettings.isLogoEnabled = false
         m.uiSettings.isCompassEnabled = true
         m.uiSettings.compassGravity = Gravity.TOP or Gravity.END
@@ -315,6 +318,19 @@ class MapController(private val context: Context) {
     var isFollowing = false
         private set
 
+    /** True once you pinch/drag the map yourself during navigation; then we stop forcing the zoom. */
+    private var userMoved = false
+
+    /** Street-level, like the mockup. */
+    private val NAV_ZOOM = 19.0
+
+    /** Called on every GPS fix while navigating: snaps back to close zoom unless you zoomed out yourself. */
+    fun keepClose() {
+        val m = map ?: return
+        if (!isFollowing || userMoved || !locationOn) return
+        if (m.cameraPosition.zoom < NAV_ZOOM - 0.25) m.locationComponent.zoomWhileTracking(NAV_ZOOM, 500)
+    }
+
     /**
      * Navigation camera: close in on your arrow, rotated to your heading, tilted,
      * with your arrow in the lower part of the screen so you see the road ahead.
@@ -322,6 +338,7 @@ class MapController(private val context: Context) {
     fun follow(tilt: Boolean) {
         val m = map ?: return
         if (!locationOn) return
+        userMoved = false
         val top = context.resources.displayMetrics.heightPixels * 0.42
         m.moveCamera(
             CameraUpdateFactory.newCameraPosition(
@@ -329,7 +346,7 @@ class MapController(private val context: Context) {
             ),
         )
         val lc = m.locationComponent
-        val zoom = 18.2
+        val zoom = NAV_ZOOM
         val tiltDeg = if (tilt) 58.0 else 0.0
         // Zoom + tilt are part of the switch to follow mode: MapLibre ignores separate zoom calls while
         // that switch animates, which left the map zoomed out until you started moving.

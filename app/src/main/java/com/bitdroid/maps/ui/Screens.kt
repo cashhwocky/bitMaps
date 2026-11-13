@@ -94,7 +94,9 @@ fun BitMapsApp(vm: AppViewModel, controller: MapController, onExit: () -> Unit) 
         val loc = vm.location ?: return@LaunchedEffect
         controller.whenReady {
             controller.showLocation(loc)
-            if (vm.screen == Screen.NAV && vm.following && !controller.isFollowing) controller.follow(vm.settings.tilt3d)
+            if (vm.screen == Screen.NAV && vm.following) {
+                if (!controller.isFollowing) controller.follow(vm.settings.tilt3d) else controller.keepClose()
+            }
         }
     }
     LaunchedEffect(vm.cameraTick) {
