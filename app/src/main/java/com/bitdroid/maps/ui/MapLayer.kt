@@ -208,17 +208,23 @@ class MapController(private val context: Context) {
     private fun line(points: List<LatLon>) =
         Feature.fromGeometry(LineString.fromLngLats(points.map { Point.fromLngLat(it.lon, it.lat) }))
 
+    private fun GeoJsonSource.put(f: Feature?) {
+        if (f != null) setGeoJson(f) else setGeoJson(empty)
+    }
+
+    private fun point(p: Place?): Feature? = p?.let { Feature.fromGeometry(Point.fromLngLat(it.lon, it.lat)) }
+
     fun showPin(place: Place?) {
-        pinSrc?.setGeoJson(place?.let { Feature.fromGeometry(Point.fromLngLat(it.lon, it.lat)) } ?: empty)
+        pinSrc?.put(point(place))
     }
 
     fun showRoutes(routes: List<Route>, selected: Int, dest: Place?) {
         val main = routes.getOrNull(selected)
-        routeSrc?.setGeoJson(main?.let { line(it.points) } ?: empty)
+        routeSrc?.put(main?.let { line(it.points) })
         val others = routes.filterIndexed { i, _ -> i != selected }.map { line(it.points) }
         altSrc?.setGeoJson(FeatureCollection.fromFeatures(others))
-        destSrc?.setGeoJson(if (main != null && dest != null) Feature.fromGeometry(Point.fromLngLat(dest.lon, dest.lat)) else empty)
-        pinSrc?.setGeoJson(if (main != null) empty else (dest?.let { Feature.fromGeometry(Point.fromLngLat(it.lon, it.lat)) } ?: empty))
+        destSrc?.put(if (main != null) point(dest) else null)
+        pinSrc?.put(if (main != null) null else point(dest))
     }
 
     // ---------- camera ----------
