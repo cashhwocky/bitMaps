@@ -36,10 +36,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p app/libs
-          json=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/k2-fsa/sherpa-onnx/releases/latest)
-          echo "$json" | jq -r '.tag_name'
-          echo "$json" | jq -r '.assets[].name' | grep -i aar || true
-          url=$(echo "$json" | jq -r '.assets[] | select(.name|test("^sherpa-onnx-v?[0-9.]+\\.aar$")) | .browser_download_url' | head -1)
+          json=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/k2-fsa/sherpa-onnx/releases?per_page=60")
+          rel=$(echo "$json" | jq -c '[.[] | select(.tag_name|test("^v[0-9]")) | select(any(.assets[]; .name|test("\\.aar$")))][0]')
+          echo "release: $(echo "$rel" | jq -r '.tag_name')"
+          echo "$rel" | jq -r '.assets[].name' | grep -i '\.aar$'
+          url=$(echo "$rel" | jq -r '[.assets[] | select(.name|test("^sherpa-onnx-v?[0-9.]+\\.aar$"))][0].browser_download_url')
+          if [ -z "$url" ] || [ "$url" = "null" ]; then
+            url=$(echo "$rel" | jq -r '[.assets[] | select(.name|test("\\.aar$")) | select(.name|test("java|static")|not)][0].browser_download_url')
+          fi
           echo "aar: $url"
           curl -fsSL -o app/libs/sherpa-onnx.aar "$url"
           ls -la app/libs
