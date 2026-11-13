@@ -88,7 +88,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         computeRoutes()
     }
 
-    fun setHome(p: Place?) {
+    fun saveHome(p: Place?) {
         recentsStore.setHome(p)
         home = p
         homeMinutes = null

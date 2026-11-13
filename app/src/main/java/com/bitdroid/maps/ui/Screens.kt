@@ -480,7 +480,7 @@ private fun BoxScope.PlaceScreen(vm: AppViewModel) {
                         .height(58.dp)
                         .clip(RoundedCornerShape(20.dp))
                         .background(if (isHome) C.AccentDeep else C.Surface)
-                        .clickable(role = Role.Button, onClickLabel = if (isHome) "Remove home" else "Set as home") { vm.setHome(if (isHome) null else p) }
+                        .clickable(role = Role.Button, onClickLabel = if (isHome) "Remove home" else "Set as home") { vm.saveHome(if (isHome) null else p) }
                         .padding(horizontal = 16.dp),
                     contentAlignment = Alignment.Center,
                 ) { Text(if (isHome) "🏠 Home ✓" else "🏠 Set home", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = if (isHome) C.OnAccentDeep else C.Text) }
