@@ -28,6 +28,7 @@ import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.location.LocationComponentActivationOptions
 import org.maplibre.android.location.LocationComponentOptions
 import org.maplibre.android.location.OnCameraTrackingChangedListener
+import org.maplibre.android.location.OnLocationCameraTransitionListener
 import org.maplibre.android.location.modes.CameraMode
 import org.maplibre.android.location.modes.RenderMode
 import org.maplibre.android.maps.MapLibreMap
@@ -328,10 +329,24 @@ class MapController(private val context: Context) {
             ),
         )
         val lc = m.locationComponent
-        lc.cameraMode = CameraMode.TRACKING_GPS
+        val zoom = 18.2
+        val tiltDeg = if (tilt) 58.0 else 0.0
+        // Zoom + tilt are part of the switch to follow mode: MapLibre ignores separate zoom calls while
+        // that switch animates, which left the map zoomed out until you started moving.
+        lc.setCameraMode(
+            CameraMode.TRACKING_GPS, 1200L, zoom, null, tiltDeg,
+            object : OnLocationCameraTransitionListener {
+                override fun onLocationCameraTransitionFinished(cameraMode: Int) {
+                    lc.zoomWhileTracking(zoom, 600)
+                    lc.tiltWhileTracking(tiltDeg, 600)
+                }
+                override fun onLocationCameraTransitionCanceled(cameraMode: Int) {
+                    lc.zoomWhileTracking(zoom, 600)
+                    lc.tiltWhileTracking(tiltDeg, 600)
+                }
+            },
+        )
         lc.renderMode = RenderMode.GPS
-        lc.zoomWhileTracking(18.2, 1200)
-        lc.tiltWhileTracking(if (tilt) 58.0 else 0.0, 1200)
         isFollowing = true
     }
 
