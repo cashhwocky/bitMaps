@@ -35,31 +35,63 @@ class Navigator(val route: Route) {
     private var started = false
     private var arrived = false
 
+    /** Your position snapped onto the route (or the raw GPS fix when you're off it). */
+    var snapped: Location? = null
+        private set
+
     fun update(loc: Location): Step {
         val p = LatLon(loc.latitude, loc.longitude)
         val pts = route.points
         val maneuvers = route.maneuvers
 
-        // Snap to the closest segment, looking a little behind and well ahead of where we were.
-        val from = if (offCount > 0) 0 else (segment - 3).coerceAtLeast(0)
-        val to = if (offCount > 0) pts.size - 2 else (segment + 80).coerceAtMost(pts.size - 2)
-        var best = segment
-        var bestT = 0.0
-        var bestD = Double.MAX_VALUE
-        for (i in from..to) {
-            if (i < 0 || i + 1 >= pts.size) continue
-            val (t, d) = Geo.project(p, pts[i], pts[i + 1])
-            if (d < bestD) { bestD = d; best = i; bestT = t }
+        // Which way you're actually driving (only trust it when moving).
+        val heading: Double? = if (loc.hasBearing() && loc.hasSpeed() && loc.speed > 3f) loc.bearing.toDouble() else null
+
+        fun search(from: Int, to: Int, needDirection: Boolean): Triple<Int, Double, Double> {
+            var bi = -1; var bt = 0.0; var bd = Double.MAX_VALUE
+            for (i in from..to) {
+                if (i < 0 || i + 1 >= pts.size) continue
+                if (needDirection && heading != null) {
+                    // Skip parts of the route going the other way (opposite side of a highway, a loop back).
+                    if (Geo.angleDiff(Geo.bearing(pts[i], pts[i + 1]), heading) > 60) continue
+                }
+                val (t, d) = Geo.project(p, pts[i], pts[i + 1])
+                if (d < bd) { bd = d; bi = i; bt = t }
+            }
+            return Triple(bi, bt, bd)
         }
-        if (pts.size < 2) { bestD = 0.0; best = 0 }
+
+        // 1) Near where we were: a little behind, well ahead. This keeps you on the right road
+        //    even when another part of the route (or an overpass) is close by.
+        var (best, bestT, bestD) = search((segment - 3).coerceAtLeast(0), (segment + 120).coerceAtMost(pts.size - 2), needDirection = true)
+        if (best < 0) {
+            val r = search((segment - 3).coerceAtLeast(0), (segment + 120).coerceAtMost(pts.size - 2), needDirection = false)
+            best = r.first; bestT = r.second; bestD = r.third
+        }
+        // 2) Lost? Look over the rest of the route ahead, but only parts heading your way.
+        if (offCount > 0 && pts.size > 1) {
+            val r = search(segment, pts.size - 2, needDirection = true)
+            if (r.first >= 0 && r.third < bestD) { best = r.first; bestT = r.second; bestD = r.third }
+        }
+        if (best < 0 || pts.size < 2) { best = 0; bestT = 0.0; bestD = 0.0 }
         segment = best
         val along = if (pts.size < 2) 0.0 else
             route.cumulative[best] + bestT * (route.cumulative[best + 1] - route.cumulative[best])
 
-        // Off route: clearly away from the line for a few fixes in a row.
-        val limit = maxOf(40.0, loc.accuracy * 1.5)
+        // Off route: clearly away from the line for a few fixes in a row (wider on fast roads).
+        val limit = maxOf(if (loc.speed > 20f) 60.0 else 45.0, loc.accuracy * 1.8)
         offCount = if (bestD > limit) offCount + 1 else 0
         val offRoute = offCount >= 3
+
+        // Where the arrow should be drawn: right on the route line, pointing along the road.
+        snapped = if (!offRoute && bestD <= limit && pts.size >= 2) {
+            val a = pts[best]; val b = pts[best + 1]
+            Location(loc).apply {
+                latitude = a.lat + bestT * (b.lat - a.lat)
+                longitude = a.lon + bestT * (b.lon - a.lon)
+                bearing = Geo.bearing(a, b).toFloat()
+            }
+        } else loc
 
         // The next turn is the first maneuver that starts ahead of us.
         var t = maneuvers.indexOfFirst { m -> m.beginIndex < route.cumulative.size && route.cumulative[m.beginIndex] > along + 3 }

@@ -96,8 +96,9 @@ fun BitMapsApp(vm: AppViewModel, controller: MapController, onExit: () -> Unit) 
             }
         }
     }
-    LaunchedEffect(vm.location) {
-        val loc = vm.location ?: return@LaunchedEffect
+    LaunchedEffect(vm.location, vm.navLocation) {
+        // While navigating, draw the arrow snapped onto the route instead of the raw (drifting) GPS fix.
+        val loc = (if (vm.screen == Screen.NAV) vm.navLocation else null) ?: vm.location ?: return@LaunchedEffect
         controller.whenReady {
             controller.showLocation(loc)
             if (vm.screen == Screen.NAV && vm.following) {

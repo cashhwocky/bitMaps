@@ -147,6 +147,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     // Navigation
     var progress by mutableStateOf<Progress?>(null); private set
+    /** During navigation: your position snapped onto the route, for drawing the arrow. */
+    var navLocation by mutableStateOf<Location?>(null); private set
     var following by mutableStateOf(true)
     var muted by mutableStateOf(!settings.voice); private set
     private var navigator: Navigator? = null
@@ -362,7 +364,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             routing = true
             routeError = null
             try {
-                routes = Valhalla.route(from, dest.pos, mode, settings.avoid)
+                routes = Valhalla.route(from, dest.pos, mode, settings.avoid, movingHeading())
                 selected = 0
                 cameraTick++
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -394,6 +396,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun end() {
         navigator = null
+        navLocation = null
         progress = null
         voice.stop()
         routes = emptyList()
@@ -418,6 +421,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (screen == Screen.ROUTE && routes.isEmpty() && !routing && routeError != null) computeRoutes()
         val nav = navigator ?: return
         val step = nav.update(loc)
+        navLocation = nav.snapped
         progress = step.progress
         step.speech?.let { voice.say(it) }
         if (step.progress.arrived) return
@@ -432,7 +436,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         voice.say("Rerouting.")
         viewModelScope.launch {
             try {
-                val heading = if (loc.hasBearing() && loc.speed > 2f) loc.bearing else null
+                val heading = movingHeading()
                 val r = Valhalla.route(LatLon(loc.latitude, loc.longitude), dest.pos, mode, settings.avoid, heading).first()
                 if (screen == Screen.NAV) {
                     navigator = Navigator(r)
@@ -497,6 +501,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             q.isNotBlank() -> { screen = Screen.SEARCH; updateQuery(q) }
             lat != 0.0 || lon != 0.0 -> dropPin(lat, lon)
         }
+    }
+
+    /** The direction you're driving, so routes start on the right side of the road (never a U-turn on a highway). */
+    private fun movingHeading(): Float? {
+        val l = location ?: return null
+        return if (l.hasBearing() && l.hasSpeed() && l.speed > 2f) l.bearing else null
     }
 
     fun here(): LatLon? = location?.let { LatLon(it.latitude, it.longitude) }

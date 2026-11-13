@@ -31,6 +31,21 @@ object Geo {
         return t to distance(p, q)
     }
 
+    /** Compass direction from a to b, 0..360 degrees. */
+    fun bearing(a: LatLon, b: LatLon): Double {
+        val la1 = Math.toRadians(a.lat); val la2 = Math.toRadians(b.lat)
+        val dl = Math.toRadians(b.lon - a.lon)
+        val y = sin(dl) * cos(la2)
+        val x = cos(la1) * sin(la2) - sin(la1) * cos(la2) * cos(dl)
+        return (Math.toDegrees(atan2(y, x)) + 360) % 360
+    }
+
+    /** Smallest angle between two directions, 0..180. */
+    fun angleDiff(a: Double, b: Double): Double {
+        val d = Math.abs(a - b) % 360
+        return if (d > 180) 360 - d else d
+    }
+
     /** Decodes a Valhalla polyline (6 digits of precision). */
     fun decodePolyline6(encoded: String): List<LatLon> {
         val out = ArrayList<LatLon>()

@@ -131,7 +131,7 @@ object Valhalla {
         val units = if (Units.imperial) "miles" else "kilometers"
         val lang = Locale.getDefault().toLanguageTag()
         val start = JSONObject().put("lat", from.lat).put("lon", from.lon).put("type", "break")
-        if (heading != null) start.put("heading", heading.toInt()).put("heading_tolerance", 60)
+        if (heading != null) start.put("heading", heading.toInt()).put("heading_tolerance", 45)
         val body = JSONObject()
             .put("locations", JSONArray().put(start).put(JSONObject().put("lat", to.lat).put("lon", to.lon).put("type", "break")))
             .put("costing", mode.costing)

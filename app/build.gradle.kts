@@ -18,8 +18,8 @@ android {
         applicationId = "com.bitdroid.maps"
         minSdk = 31
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.3.1"
+        versionCode = 7
+        versionName = "0.3.2"
 
         // Pixels are arm64 only; keeping one ABI keeps the APK (map engine) small.
         ndk { abiFilters += listOf("arm64-v8a") }

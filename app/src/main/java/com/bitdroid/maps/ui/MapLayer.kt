@@ -144,8 +144,14 @@ class MapController(private val context: Context, private val pal: MapPalette) {
     )
 
     private fun addOverlays(s: Style) {
-        val firstLabel = s.layers.firstOrNull { it is SymbolLayer }?.id
-        fun below(layer: Layer) { if (firstLabel != null) s.addLayerBelow(layer, firstLabel) else s.addLayer(layer) }
+        // The route must sit ON TOP of every road (some road and bridge layers come after the first label
+        // in the style), so it goes right above the last non-label layer. Only text labels stay above it.
+        var anchor: String? = s.layers.lastOrNull { it !is SymbolLayer }?.id
+        fun below(layer: Layer) {
+            val a = anchor
+            if (a != null) s.addLayerAbove(layer, a) else s.addLayer(layer)
+            anchor = layer.id
+        }
 
         val alt = GeoJsonSource("bm-alt", GeoJsonOptions())
         val route = GeoJsonSource("bm-route", GeoJsonOptions().withLineMetrics(true))
@@ -167,6 +173,14 @@ class MapController(private val context: Context, private val pal: MapPalette) {
             Expression.linear(), Expression.lineProgress(),
             Expression.stop(0f, Expression.color(pal.routeStart)),
             Expression.stop(1f, Expression.color(pal.routeEnd)),
+        )
+        below(
+            LineLayer("bm-route-casing", "bm-route").withProperties(
+                PropertyFactory.lineColor(pal.bg),
+                PropertyFactory.lineWidth(byZoom(10f, 30f)),
+                PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
+            ),
         )
         below(
             LineLayer("bm-route-glow", "bm-route").withProperties(
