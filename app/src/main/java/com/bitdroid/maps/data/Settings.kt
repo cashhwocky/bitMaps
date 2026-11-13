@@ -21,7 +21,6 @@ class Settings(context: Context) {
     var avoidFerries by bool("avoid_ferries", false)
 
     // Voice
-    var voiceId by text("voice_id", "amy")
     var voiceSpeed by float("voice_speed", 1f)
     var voicePitch by float("voice_pitch", 1f)
 

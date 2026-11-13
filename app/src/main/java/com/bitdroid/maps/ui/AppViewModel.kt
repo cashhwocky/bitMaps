@@ -18,8 +18,6 @@ import com.bitdroid.maps.data.Recents
 import com.bitdroid.maps.data.Route
 import com.bitdroid.maps.data.Settings
 import com.bitdroid.maps.data.Valhalla
-import com.bitdroid.maps.data.VoiceStore
-import com.bitdroid.maps.data.Voices
 import com.bitdroid.maps.nav.LocationTracker
 import com.bitdroid.maps.nav.Music
 import com.bitdroid.maps.nav.Navigator
@@ -49,8 +47,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val settings = Settings(app)
     val tracker = LocationTracker(app)
     val music = Music(app)
-    val voiceStore = VoiceStore(app)
-    private val voice = Voice(app, settings, voiceStore)
+    private val voice = Voice(app, settings)
     private val recentsStore = Recents(app)
 
     var screen by mutableStateOf(Screen.EXPLORE); private set
@@ -89,41 +86,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         viewModelScope.launch { tracker.location.collect { it?.let(::onLocation) } }
-        // Unpack the built-in voice (Amy) in the background on first launch.
-        viewModelScope.launch {
-            val v = Voices.byId(settings.voiceId) ?: Voices.all.first { it.bundled }
-            if (v.bundled && voiceStore.install(v)) voice.reload()
-        }
     }
 
-    // ---------- voice picker ----------
+    // ---------- voice ----------
 
     val sampleLine get() = "In ${com.bitdroid.maps.data.Units.spoken(152.0)}, turn right onto Main Street."
 
     fun openVoice() { screen = Screen.VOICE }
-
-    fun pickVoice(id: String) {
-        if (id == Voices.SYSTEM) {
-            settings.voiceId = id
-            voice.reload()
-            voice.preview(sampleLine, id)
-            return
-        }
-        val v = Voices.byId(id) ?: return
-        viewModelScope.launch {
-            if (voiceStore.install(v)) {
-                settings.voiceId = id
-                voice.reload()
-                voice.preview(sampleLine, id)
-            }
-        }
-    }
-
-    fun previewVoice(id: String) {
-        if (id == Voices.SYSTEM) { voice.preview(sampleLine, id); return }
-        val v = Voices.byId(id) ?: return
-        viewModelScope.launch { if (voiceStore.install(v)) voice.preview("Hi, I'm ${v.name}. ${sampleLine}", id) }
-    }
 
     fun testVoice() = voice.preview(sampleLine)
 

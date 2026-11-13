@@ -30,37 +30,6 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
-      # Voice engine (sherpa-onnx) ships as an .aar on its GitHub releases.
-      - name: Fetch voice engine
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p app/libs
-          json=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/k2-fsa/sherpa-onnx/releases?per_page=60")
-          rel=$(echo "$json" | jq -c '[.[] | select(.tag_name|test("^v[0-9]")) | select(any(.assets[]; .name|test("\\.aar$")))][0]')
-          echo "release: $(echo "$rel" | jq -r '.tag_name')"
-          echo "$rel" | jq -r '.assets[].name' | grep -i '\.aar$'
-          url=$(echo "$rel" | jq -r '[.assets[] | select(.name|test("^sherpa-onnx-v?[0-9.]+\\.aar$"))][0].browser_download_url')
-          if [ -z "$url" ] || [ "$url" = "null" ]; then
-            url=$(echo "$rel" | jq -r '[.assets[] | select(.name|test("\\.aar$")) | select(.name|test("java|static")|not)][0].browser_download_url')
-          fi
-          echo "aar: $url"
-          curl -fsSL -o app/libs/sherpa-onnx.aar "$url"
-          ls -la app/libs
-
-      # Bundle the default natural voice (Amy, Piper via sherpa-onnx) into the APK.
-      - name: Fetch built-in voice
-        run: |
-          mkdir -p app/src/main/assets/voices/amy
-          curl -fsSL https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-amy-medium.tar.bz2 \
-            | tar xj --strip-components=1 -C app/src/main/assets/voices/amy
-          rm -f app/src/main/assets/voices/amy/MODEL_CARD app/src/main/assets/voices/amy/*.json
-          ls -la app/src/main/assets/voices/amy
-          for v in en_US-kristin-medium en_GB-jenny_dioco-medium en_US-ryan-medium; do
-            code=$(curl -s -o /dev/null -w "%{http_code}" -L -I https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-$v.tar.bz2)
-            echo "voice $v -> $code"
-          done
-
       - uses: gradle/actions/setup-gradle@v4
 
       # Optional release signing. Add these repo secrets to sign with your own key:
