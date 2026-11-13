@@ -5,6 +5,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -37,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -48,6 +50,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -66,122 +69,141 @@ fun BoxScope.NavScreen(vm: AppViewModel) {
     val p = vm.progress
     val now by vm.music.now.collectAsState()
 
-    // ---- turn card (with music built in) ----
-    val shape = RoundedCornerShape(30.dp)
     Column(
-        Modifier
-            .align(Alignment.TopCenter)
-            .statusBarsPadding()
-            .padding(horizontal = 12.dp, vertical = 8.dp)
-            .fillMaxWidth()
-            .shadow(22.dp, shape, ambientColor = C.Violet, spotColor = C.Violet)
-            .clip(shape)
-            .background(C.gradient),
+        Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp).fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        if (p == null) {
-            Text(
-                "Getting your location…", color = Color.White, fontFamily = Display, fontWeight = FontWeight.Bold, fontSize = 20.sp,
-                modifier = Modifier.padding(22.dp),
-            )
-        } else if (p.arrived) {
-            Row(Modifier.padding(22.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Icon(maneuverIcon(4), null, tint = Color.White, modifier = Modifier.size(52.dp))
-                Column {
-                    Text("🎉 You've arrived", color = Color.White, fontFamily = Display, fontWeight = FontWeight.Bold, fontSize = 24.sp)
-                    vm.place?.let { Text(it.name, color = Color.White.copy(alpha = 0.85f), fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
-                }
-            }
-        } else {
-            val m = p.maneuver
-            Row(
-                Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                Icon(maneuverIcon(m.type), null, tint = Color.White, modifier = Modifier.size(56.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(Units.short(p.toManeuverM), color = Color.White, fontFamily = Display, fontWeight = FontWeight.Bold, fontSize = 34.sp)
-                    Text(
-                        m.instruction.removeSuffix("."), color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
-                        maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 23.sp,
+        // ---- lilac turn card ----
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(TileRadius)).background(C.Accent).padding(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 14.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Cookie(78.dp, C.AccentDeep) {
+                    Icon(
+                        if (p?.arrived == true) maneuverIcon(4) else maneuverIcon(p?.maneuver?.type ?: 1),
+                        null, tint = C.OnAccentDeep, modifier = Modifier.size(42.dp),
                     )
                 }
+                Column(Modifier.weight(1f)) {
+                    when {
+                        p == null -> Text("Getting your location…", color = C.OnAccent, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+                        p.arrived -> {
+                            Text("🎉 You've arrived", color = C.OnAccent, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
+                            vm.place?.let { Text(it.name, color = C.OnAccent, fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
+                        }
+                        else -> {
+                            Text(Units.short(p.toManeuverM), color = C.OnAccent, fontSize = 40.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1).sp, lineHeight = 44.sp)
+                            Text(
+                                p.maneuver.instruction.removeSuffix("."), color = C.OnAccent, fontSize = 17.sp, fontWeight = FontWeight.SemiBold,
+                                lineHeight = 21.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
             }
-            p.next?.takeIf { !m.isArrival }?.let { n ->
+            p?.next?.takeIf { !p.arrived && !p.maneuver.isArrival }?.let { n ->
                 Row(
-                    Modifier.fillMaxWidth().background(Color(0x47070A0D)).padding(horizontal = 20.dp, vertical = 11.dp),
+                    Modifier.padding(top = 12.dp).clip(RoundedCornerShape(16.dp)).background(C.AccentSoft).padding(horizontal = 12.dp, vertical = 7.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Text("Then", color = Color.White.copy(alpha = 0.85f), fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                    Icon(maneuverIcon(n.type), null, tint = Color.White, modifier = Modifier.size(20.dp))
-                    Text(n.street ?: n.instruction.removeSuffix("."), color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("Then", color = C.OnAccent, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Icon(maneuverIcon(n.type), null, tint = C.OnAccent, modifier = Modifier.size(18.dp))
+                    Text(n.street ?: n.instruction.removeSuffix("."), color = C.OnAccent, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
-        if (vm.settings.musicInNav) now?.let { MusicStrip(vm, it) }
-    }
 
-    // ---- side controls ----
-    Column(
-        Modifier.align(Alignment.CenterStart).padding(start = 16.dp, top = 120.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        if (p != null) {
-            Box(
-                Modifier.size(60.dp).clip(CircleShape).background(C.Glass).border(1.dp, C.Outline, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(Units.speed(p.speedMps), fontFamily = Display, fontWeight = FontWeight.Bold, fontSize = 19.sp)
-                    Text(Units.speedUnit, fontSize = 10.sp, color = C.Dim, fontWeight = FontWeight.SemiBold)
-                }
-            }
-        }
-    }
-    Column(
-        Modifier.align(Alignment.CenterEnd).padding(end = 16.dp, top = 120.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        GlassButton(
-            if (vm.muted) Icons.AutoMirrored.Rounded.VolumeOff else Icons.AutoMirrored.Rounded.VolumeUp,
-            if (vm.muted) "Unmute voice" else "Mute voice",
-            { vm.toggleMute() }, size = 52.dp, shape = RoundedCornerShape(26.dp),
-        )
-        if (vm.following) GlassButton(Icons.Rounded.Route, "Route overview", { vm.overview() }, size = 52.dp, shape = RoundedCornerShape(26.dp))
-        else RecenterButton(vm)
-    }
-
-    // ---- bottom bar ----
-    val barShape = RoundedCornerShape(30.dp)
-    Row(
-        Modifier
-            .align(Alignment.BottomCenter)
-            .navigationBarsPadding()
-            .padding(12.dp)
-            .fillMaxWidth()
-            .height(92.dp)
-            .shadow(20.dp, barShape)
-            .clip(barShape)
-            .background(Color(0xF512151C))
-            .border(1.dp, C.Outline, barShape)
-            .padding(start = 22.dp, end = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Column(Modifier.weight(1f)) {
+        // ---- music tile + speed cookie ----
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            val np = now
+            if (vm.settings.musicInNav && np != null) MusicTile(vm, np, Modifier.weight(1f)) else Spacer(Modifier.weight(1f))
             if (p != null) {
-                Text(Units.duration(p.remainingS), color = C.Green, fontFamily = Display, fontWeight = FontWeight.Bold, fontSize = 28.sp)
+                Cookie(76.dp, C.Accent, shape = Cookie5) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(Units.speed(p.speedMps), color = C.OnAccent, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, lineHeight = 22.sp)
+                        Text(Units.speedUnit, color = C.OnAccent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- side squircles ----
+    Column(
+        Modifier.align(Alignment.CenterEnd).padding(end = 14.dp, top = 160.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Squircle(if (vm.muted) "🔇" else "🔊", if (vm.muted) "Unmute voice" else "Mute voice") { vm.toggleMute() }
+        if (vm.following) Squircle("🗺️", "Route overview") { vm.overview() }
+        else Squircle("🎯", "Recenter") { vm.recenter() }
+    }
+
+    // ---- arrival tile + End cookie ----
+    Row(
+        Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(horizontal = 12.dp, vertical = 16.dp).fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            Modifier.weight(1f).height(92.dp).clip(RoundedCornerShape(32.dp)).background(C.Glass).padding(horizontal = 22.dp),
+            verticalArrangement = Arrangement.Center,
+        ) {
+            if (p != null) {
+                Text(Units.duration(p.remainingS), color = C.Accent, fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-0.5).sp)
                 val arrive = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(System.currentTimeMillis() + (p.remainingS * 1000).toLong()))
                 Text("${Units.short(p.remainingM)} · arrive $arrive", color = C.Dim, fontSize = 14.sp, fontWeight = FontWeight.Medium)
             } else {
                 Text(vm.place?.name ?: "", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
+        Cookie(
+            92.dp, C.Danger,
+            modifier = Modifier.clickable(role = Role.Button, onClickLabel = "End navigation") { vm.end() },
+        ) { Icon(Icons.Rounded.Close, "End navigation", tint = C.OnDanger, modifier = Modifier.size(40.dp)) }
+    }
+}
+
+@Composable
+private fun Squircle(emoji: String, label: String, onClick: () -> Unit) {
+    Box(
+        Modifier.size(54.dp).clip(RoundedCornerShape(18.dp)).background(C.Glass).clickable(role = Role.Button, onClickLabel = label, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Text(emoji, fontSize = 22.sp) }
+}
+
+/** Music tile like the home screen's music widget. Swipe it left/right to skip. */
+@Composable
+private fun MusicTile(vm: AppViewModel, np: NowPlaying, modifier: Modifier) {
+    var drag by remember { mutableFloatStateOf(0f) }
+    Row(
+        modifier
+            .height(76.dp)
+            .clip(RoundedCornerShape(28.dp))
+            .background(C.Glass)
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragEnd = {
+                        if (drag < -80) vm.music.next() else if (drag > 80) vm.music.previous()
+                        drag = 0f
+                    },
+                    onHorizontalDrag = { _, d -> drag += d },
+                )
+            }
+            .padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        AlbumArt(np, 52.dp)
+        Column(Modifier.weight(1f)) {
+            Text(np.title, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(np.artist.ifBlank { np.app }, color = C.Dim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
         Box(
-            Modifier.size(56.dp).clip(CircleShape).background(C.Red).clickable(role = Role.Button, onClickLabel = "End navigation") { vm.end() },
+            Modifier.size(46.dp).clip(RoundedCornerShape(15.dp)).background(C.Accent)
+                .clickable(role = Role.Button, onClickLabel = if (np.playing) "Pause" else "Play") { vm.music.playPause() },
             contentAlignment = Alignment.Center,
-        ) { Icon(Icons.Rounded.Close, "End navigation", tint = Color.White, modifier = Modifier.size(24.dp)) }
+        ) { Icon(if (np.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (np.playing) "Pause" else "Play", tint = C.OnAccent, modifier = Modifier.size(22.dp)) }
     }
 }
 
@@ -227,39 +249,6 @@ private fun MediaButton(icon: ImageVector, label: String, onClick: () -> Unit, f
     ) { Icon(icon, label, tint = tint, modifier = Modifier.size(22.dp)) }
 }
 
-/** Music inside the turn card. */
-@Composable
-private fun MusicStrip(vm: AppViewModel, np: NowPlaying) {
-    val pos = rememberPosition(np)
-    Box(Modifier.fillMaxWidth().background(Color(0x73070A0D))) {
-        Row(
-            Modifier.padding(start = 14.dp, end = 8.dp, top = 10.dp, bottom = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            AlbumArt(np, 40.dp)
-            Column(Modifier.weight(1f)) {
-                Text(np.title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(
-                    listOf(np.artist, np.app).filter { it.isNotBlank() }.joinToString(" · "),
-                    color = Color.White.copy(alpha = 0.75f), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                )
-            }
-            MediaButton(Icons.Rounded.SkipPrevious, "Previous track", { vm.music.previous() })
-            MediaButton(
-                if (np.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (np.playing) "Pause" else "Play",
-                { vm.music.playPause() }, filled = true, tint = Color(0xFF3B3FD8),
-            )
-            MediaButton(Icons.Rounded.SkipNext, "Next track", { vm.music.next() })
-        }
-        if (np.durationMs > 0) {
-            Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(3.dp).background(Color.White.copy(alpha = 0.12f))) {
-                Box(Modifier.fillMaxWidth(pos.toFloat() / np.durationMs).fillMaxHeight().background(Color.White))
-            }
-        }
-    }
-}
-
 /** Music bar floating over the map (Settings → Music → Show on map). */
 @Composable
 fun MusicBar(vm: AppViewModel, np: NowPlaying, modifier: Modifier = Modifier) {
@@ -278,7 +267,7 @@ fun MusicBar(vm: AppViewModel, np: NowPlaying, modifier: Modifier = Modifier) {
             }
             MediaButton(Icons.Rounded.SkipPrevious, "Previous track", { vm.music.previous() }, tint = C.Text)
             Box(Modifier.size(44.dp).clip(CircleShape).background(C.gradient).clickable(role = Role.Button) { vm.music.playPause() }, contentAlignment = Alignment.Center) {
-                Icon(if (np.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (np.playing) "Pause" else "Play", tint = Color.White, modifier = Modifier.size(22.dp))
+                Icon(if (np.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (np.playing) "Pause" else "Play", tint = C.OnAccent, modifier = Modifier.size(22.dp))
             }
             MediaButton(Icons.Rounded.SkipNext, "Next track", { vm.music.next() }, tint = C.Text)
         }

@@ -105,7 +105,7 @@ private fun SliderRow(label: String, value: String, current: Float, range: Close
             value = current,
             onValueChange = onChange,
             valueRange = range,
-            colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = C.Violet, inactiveTrackColor = C.SurfaceHigh),
+            colors = SliderDefaults.colors(thumbColor = C.Accent, activeTrackColor = C.Violet, inactiveTrackColor = C.SurfaceHigh),
         )
     }
 }

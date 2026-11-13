@@ -145,11 +145,9 @@ fun SetupScreen(vm: AppViewModel) {
             ) {
                 Box(
                     Modifier
-                        .size(132.dp)
-                        .shadow(30.dp, CircleShape, ambientColor = C.Violet, spotColor = C.Violet)
-                        .clip(CircleShape)
-                        .background(Brush.linearGradient(listOf(C.Violet.copy(alpha = 0.35f), C.Blue.copy(alpha = 0.25f), C.Cyan.copy(alpha = 0.2f))))
-                        .border(1.dp, Color.White.copy(alpha = 0.12f), CircleShape),
+                        .size(150.dp)
+                        .clip(Cookie8)
+                        .background(C.Accent),
                     contentAlignment = Alignment.Center,
                 ) { Text(s.emoji, fontSize = 62.sp) }
                 Spacer(Modifier.height(32.dp))

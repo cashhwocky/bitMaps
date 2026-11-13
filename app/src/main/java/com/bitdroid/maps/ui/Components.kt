@@ -103,10 +103,10 @@ fun GradientButton(
             Text(emoji, fontSize = 20.sp)
             Spacer(Modifier.width(10.dp))
         } else if (icon != null) {
-            Icon(icon, null, tint = Color.White, modifier = Modifier.size(20.dp))
+            Icon(icon, null, tint = C.OnAccent, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(10.dp))
         }
-        Text(text, color = if (enabled) Color.White else C.Dim, fontFamily = Display, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        Text(text, color = if (enabled) C.OnAccent else C.Dim, fontFamily = Display, fontWeight = FontWeight.Bold, fontSize = 16.sp)
     }
 }
 

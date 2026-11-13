@@ -32,6 +32,7 @@ import org.maplibre.android.location.OnLocationCameraTransitionListener
 import org.maplibre.android.location.modes.CameraMode
 import org.maplibre.android.location.modes.RenderMode
 import org.maplibre.android.maps.MapLibreMap
+import org.maplibre.android.maps.MapLibreMapOptions
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
 import org.maplibre.android.style.expressions.Expression
@@ -52,7 +53,7 @@ import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
 
 /** Everything the app does to the map: dark styling, route lines, pins, camera and the location puck. */
-class MapController(private val context: Context) {
+class MapController(private val context: Context, private val pal: MapPalette) {
     private var map: MapLibreMap? = null
     private var style: Style? = null
     private var locationOn = false
@@ -78,11 +79,9 @@ class MapController(private val context: Context) {
             if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) userMoved = true
         }
         m.uiSettings.isLogoEnabled = false
-        m.uiSettings.isCompassEnabled = true
-        m.uiSettings.compassGravity = Gravity.TOP or Gravity.END
-        m.uiSettings.setCompassMargins(0, dp(150), dp(18), 0)
-        m.uiSettings.attributionGravity = Gravity.TOP or Gravity.START
-        m.uiSettings.setAttributionMargins(dp(14), dp(150), 0, 0)
+        m.uiSettings.isCompassEnabled = false
+        m.uiSettings.attributionGravity = Gravity.BOTTOM or Gravity.START
+        m.uiSettings.setAttributionMargins(dp(12), 0, 0, dp(10))
         m.uiSettings.isAttributionEnabled = true
         ready = true
         pending.forEach { it() }
@@ -102,52 +101,41 @@ class MapController(private val context: Context) {
         val id = layer.id.lowercase()
         fun has(vararg words: String) = words.any { id.contains(it) }
         when (layer) {
-            is BackgroundLayer -> layer.setProperties(PropertyFactory.backgroundColor(Color.parseColor("#0C0F15")))
+            is BackgroundLayer -> layer.setProperties(PropertyFactory.backgroundColor(pal.bg))
             is FillLayer -> {
                 val c = when {
-                    has("water", "ocean", "river", "lake") -> "#0D1828"
-                    has("park", "wood", "forest", "grass", "landcover", "green", "pitch", "cemetery") -> "#0F1D19"
-                    has("building") -> "#161B24"
-                    has("ice", "glacier") -> "#141922"
-                    else -> "#0E1117"
+                    has("water", "ocean", "river", "lake") -> pal.water
+                    has("park", "wood", "forest", "grass", "landcover", "green", "pitch", "cemetery") -> pal.park
+                    has("building") -> pal.block
+                    else -> pal.bg
                 }
-                layer.setProperties(PropertyFactory.fillColor(Color.parseColor(c)), PropertyFactory.fillOutlineColor(Color.parseColor(c)))
+                layer.setProperties(PropertyFactory.fillColor(c), PropertyFactory.fillOutlineColor(c))
             }
-            is FillExtrusionLayer -> layer.setProperties(PropertyFactory.fillExtrusionColor(Color.parseColor("#1A2030")))
+            is FillExtrusionLayer -> layer.setProperties(PropertyFactory.fillExtrusionColor(pal.block))
             is LineLayer -> {
                 val c = when {
-                    has("water", "river", "stream", "canal") -> "#12233A"
-                    has("boundary", "admin") -> "#2A3140"
-                    has("rail", "transit") -> "#1A1F28"
-                    has("motorway", "trunk") && has("casing") -> "#1E1B33"
-                    has("motorway", "trunk") -> "#3B3470"
-                    has("casing") -> "#12161E"
-                    has("path", "track", "pedestrian", "footway", "cycle") -> "#1A1F28"
-                    has("highway", "road", "street", "transportation", "minor", "major", "primary", "secondary", "tertiary", "service") -> "#222936"
+                    has("water", "river", "stream", "canal") -> pal.water
+                    has("boundary", "admin") -> pal.road
+                    has("rail", "transit") -> pal.block
+                    has("motorway", "trunk") && has("casing") -> pal.bg
+                    has("motorway", "trunk") -> pal.roadMajor
+                    has("casing") -> pal.bg
+                    has("path", "track", "pedestrian", "footway", "cycle") -> pal.block
+                    has("highway", "road", "street", "transportation", "minor", "major", "primary", "secondary", "tertiary", "service") -> pal.road
                     else -> null
                 }
-                if (c != null) layer.setProperties(PropertyFactory.lineColor(Color.parseColor(c)))
+                if (c != null) layer.setProperties(PropertyFactory.lineColor(c))
             }
             is SymbolLayer -> {
-                val c = when {
-                    has("water", "ocean", "sea", "lake") -> "#4D6A93"
-                    has("country", "city", "state", "continent") -> "#C5CBD6"
-                    else -> "#8B93A3"
-                }
+                val c = if (has("country", "city", "state", "continent")) pal.labelStrong else pal.label
                 layer.setProperties(
-                    PropertyFactory.textColor(Color.parseColor(c)),
-                    PropertyFactory.textHaloColor(Color.parseColor("#0C0F15")),
+                    PropertyFactory.textColor(c),
+                    PropertyFactory.textHaloColor(pal.bg),
                     PropertyFactory.textHaloWidth(1.2f),
                 )
             }
         }
     }
-
-    /** Line width that grows as you zoom in, so the route stays bold and smooth up close. */
-    private fun byZoom(at12: Float, at19: Float): Expression = Expression.interpolate(
-        Expression.exponential(1.4f), Expression.zoom(),
-        Expression.stop(12f, at12), Expression.stop(19f, at19),
-    )
 
     private fun addOverlays(s: Style) {
         val firstLabel = s.layers.firstOrNull { it is SymbolLayer }?.id
@@ -162,7 +150,7 @@ class MapController(private val context: Context) {
 
         below(
             LineLayer("bm-alt-line", "bm-alt").withProperties(
-                PropertyFactory.lineColor(Color.parseColor("#4A5263")),
+                PropertyFactory.lineColor(pal.alt),
                 PropertyFactory.lineWidth(byZoom(5f, 16f)),
                 PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
                 PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
@@ -171,9 +159,8 @@ class MapController(private val context: Context) {
         )
         val gradient = Expression.interpolate(
             Expression.linear(), Expression.lineProgress(),
-            Expression.stop(0f, Expression.color(Color.parseColor("#7C4DFF"))),
-            Expression.stop(0.55f, Expression.color(Color.parseColor("#2F6BFF"))),
-            Expression.stop(1f, Expression.color(Color.parseColor("#22D3EE"))),
+            Expression.stop(0f, Expression.color(pal.routeStart)),
+            Expression.stop(1f, Expression.color(pal.routeEnd)),
         )
         below(
             LineLayer("bm-route-glow", "bm-route").withProperties(
@@ -196,7 +183,7 @@ class MapController(private val context: Context) {
         s.addLayer(
             CircleLayer("bm-pin-dot", "bm-pin").withProperties(
                 PropertyFactory.circleRadius(11f),
-                PropertyFactory.circleColor(Color.parseColor("#F472B6")),
+                PropertyFactory.circleColor(pal.pin),
                 PropertyFactory.circleStrokeColor(Color.WHITE),
                 PropertyFactory.circleStrokeWidth(3.5f),
             ),
@@ -204,7 +191,7 @@ class MapController(private val context: Context) {
         s.addLayer(
             CircleLayer("bm-dest-dot", "bm-dest").withProperties(
                 PropertyFactory.circleRadius(10f),
-                PropertyFactory.circleColor(Color.parseColor("#22D3EE")),
+                PropertyFactory.circleColor(pal.routeEnd),
                 PropertyFactory.circleStrokeColor(Color.WHITE),
                 PropertyFactory.circleStrokeWidth(3.5f),
             ),
@@ -293,9 +280,9 @@ class MapController(private val context: Context) {
         val lc = m.locationComponent
         if (!locationOn) {
             val options = LocationComponentOptions.builder(context)
-                .foregroundTintColor(Color.parseColor("#7C4DFF"))
-                .bearingTintColor(Color.parseColor("#2F6BFF"))
-                .accuracyColor(Color.parseColor("#7C4DFF"))
+                .foregroundDrawable(com.bitdroid.maps.R.drawable.ic_puck_dot)
+                .gpsDrawable(com.bitdroid.maps.R.drawable.ic_puck_gps)
+                .accuracyColor(pal.pin)
                 .accuracyAlpha(0.12f)
                 .build()
             lc.activateLocationComponent(
@@ -384,7 +371,8 @@ fun MapSurface(controller: MapController, onLongPress: (Double, Double) -> Unit,
     val longPress by rememberUpdatedState(onLongPress)
     val mapView = remember {
         MapLibre.getInstance(context)
-        MapView(context).apply {
+        // TextureView mode lets the map be clipped into a rounded Bloom tile.
+        MapView(context, MapLibreMapOptions.createFromAttributes(context).textureMode(true)).apply {
             onCreate(null)
             getMapAsync { m ->
                 m.setStyle(Style.Builder().fromUri(Servers.MAP_STYLE)) { s -> controller.attach(m, s) }

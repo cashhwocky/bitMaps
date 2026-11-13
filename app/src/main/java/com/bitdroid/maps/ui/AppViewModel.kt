@@ -44,6 +44,19 @@ val categories = listOf(
     Category("Charging", "charging_station", "amenity:charging_station"),
 )
 
+private val usStates = mapOf(
+    "Alabama" to "AL", "Alaska" to "AK", "Arizona" to "AZ", "Arkansas" to "AR", "California" to "CA", "Colorado" to "CO",
+    "Connecticut" to "CT", "Delaware" to "DE", "Florida" to "FL", "Georgia" to "GA", "Hawaii" to "HI", "Idaho" to "ID",
+    "Illinois" to "IL", "Indiana" to "IN", "Iowa" to "IA", "Kansas" to "KS", "Kentucky" to "KY", "Louisiana" to "LA",
+    "Maine" to "ME", "Maryland" to "MD", "Massachusetts" to "MA", "Michigan" to "MI", "Minnesota" to "MN",
+    "Mississippi" to "MS", "Missouri" to "MO", "Montana" to "MT", "Nebraska" to "NE", "Nevada" to "NV",
+    "New Hampshire" to "NH", "New Jersey" to "NJ", "New Mexico" to "NM", "New York" to "NY", "North Carolina" to "NC",
+    "North Dakota" to "ND", "Ohio" to "OH", "Oklahoma" to "OK", "Oregon" to "OR", "Pennsylvania" to "PA",
+    "Rhode Island" to "RI", "South Carolina" to "SC", "South Dakota" to "SD", "Tennessee" to "TN", "Texas" to "TX",
+    "Utah" to "UT", "Vermont" to "VT", "Virginia" to "VA", "Washington" to "WA", "West Virginia" to "WV",
+    "Wisconsin" to "WI", "Wyoming" to "WY",
+)
+
 class AppViewModel(app: Application) : AndroidViewModel(app) {
     val settings = Settings(app)
     val tracker = LocationTracker(app)
@@ -57,6 +70,63 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     var location by mutableStateOf<Location?>(null); private set
     var recents by mutableStateOf(recentsStore.load()); private set
+
+    // Bloom tiles on Explore
+    var home by mutableStateOf(recentsStore.home()); private set
+    var homeMinutes by mutableStateOf<Int?>(null); private set
+    var hereName by mutableStateOf<String?>(null); private set
+    private var hereNameAt: LatLon? = null
+    private var homeEtaAt = 0L
+
+    /** Where the map tile sits on Explore (the map view is clipped to it). */
+    var mapTile by mutableStateOf<androidx.compose.ui.geometry.Rect?>(null)
+
+    fun goHome() {
+        val h = home ?: return
+        place = h
+        screen = Screen.ROUTE
+        computeRoutes()
+    }
+
+    fun setHome(p: Place?) {
+        recentsStore.setHome(p)
+        home = p
+        homeMinutes = null
+        homeEtaAt = 0L
+        refreshTiles()
+    }
+
+    fun isHome(p: Place) = home?.let { Geo.distance(it.pos, p.pos) < 25 } == true
+
+    /** Town name for the map chip and drive time home for the Home tile (cheap, cached). */
+    private fun refreshTiles() {
+        val me = here() ?: return
+        if (hereNameAt == null || Geo.distance(hereNameAt!!, me) > 1500) {
+            hereNameAt = me
+            viewModelScope.launch {
+                runCatching { Photon.reverse(me.lat, me.lon) }.getOrNull()?.let { p ->
+                    val parts = p.detail.split(", ").filter { it.isNotBlank() }
+                    hereName = when {
+                        parts.size >= 2 -> parts.takeLast(2).joinToString(", ") { stateShort(it) }
+                        parts.size == 1 -> parts[0]
+                        else -> p.name
+                    }
+                }
+            }
+        }
+        val h = home ?: return
+        val now = System.currentTimeMillis()
+        if (now - homeEtaAt < 5 * 60_000) return
+        homeEtaAt = now
+        if (Geo.distance(me, h.pos) < 60) { homeMinutes = 0; return }
+        viewModelScope.launch {
+            runCatching { Valhalla.route(me, h.pos, Mode.DRIVE, settings.avoid).first() }.getOrNull()?.let {
+                homeMinutes = Math.round(it.durationS / 60.0).toInt().coerceAtLeast(1)
+            }
+        }
+    }
+
+    private fun stateShort(s: String): String = usStates[s] ?: s
 
     // Search
     var query by mutableStateOf(""); private set
@@ -176,6 +246,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- search ----------
 
     fun openSearch() { screen = Screen.SEARCH }
+
+    /** Result of the mic button on the search bar. */
+    fun voiceQuery(text: String) {
+        screen = Screen.SEARCH
+        updateQuery(text)
+    }
 
     fun updateQuery(q: String) {
         query = q
@@ -329,6 +405,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val first = location == null
         location = loc
         if (first && screen == Screen.EXPLORE) cameraTick++
+        if (screen == Screen.EXPLORE) refreshTiles()
         if (screen == Screen.ROUTE && routes.isEmpty() && !routing && routeError != null) computeRoutes()
         val nav = navigator ?: return
         val step = nav.update(loc)

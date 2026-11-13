@@ -17,7 +17,9 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
@@ -37,6 +39,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.Navigation
 import androidx.compose.material.icons.rounded.Search
@@ -54,6 +57,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -103,7 +109,7 @@ fun BitMapsApp(vm: AppViewModel, controller: MapController, onExit: () -> Unit) 
         controller.onTrackingDismissed = { vm.following = false }
         controller.whenReady {
             when (vm.screen) {
-                Screen.EXPLORE, Screen.SEARCH -> vm.location?.let { controller.flyTo(it.latitude, it.longitude, 15.0, 260) }
+                Screen.EXPLORE, Screen.SEARCH -> vm.location?.let { controller.flyTo(it.latitude, it.longitude, 15.5, 0) }
                 Screen.PLACE -> vm.place?.let { controller.flyTo(it.lat, it.lon, 16.0, 420) }
                 Screen.ROUTE -> vm.routes.getOrNull(vm.selected)?.let { r -> controller.fit(vm.routes.flatMap { it.points }.ifEmpty { r.points }, 220, 380) }
                 Screen.NAV -> {
@@ -115,8 +121,26 @@ fun BitMapsApp(vm: AppViewModel, controller: MapController, onExit: () -> Unit) 
         }
     }
 
-    Box(Modifier.fillMaxSize().background(C.Bg)) {
-        MapSurface(controller, onLongPress = vm::dropPin, modifier = Modifier.fillMaxSize())
+    // On Explore the map lives inside a rounded Bloom tile; everywhere else it fills the screen.
+    val tile = vm.mapTile
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val mapModifier = if (vm.screen == Screen.EXPLORE && tile != null) {
+        with(density) {
+            Modifier
+                .offset { androidx.compose.ui.unit.IntOffset(tile.left.toInt(), tile.top.toInt()) }
+                .size(tile.width.toDp(), tile.height.toDp())
+                .clip(RoundedCornerShape(TileRadius))
+        }
+    } else Modifier.fillMaxSize()
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(C.Bg)
+            .background(androidx.compose.ui.graphics.Brush.radialGradient(listOf(C.glowA, Color.Transparent), center = androidx.compose.ui.geometry.Offset(0f, 0f), radius = 1400f))
+            .background(androidx.compose.ui.graphics.Brush.radialGradient(listOf(C.glowB, Color.Transparent), center = androidx.compose.ui.geometry.Offset(1400f, 3000f), radius = 1600f)),
+    ) {
+        MapSurface(controller, onLongPress = vm::dropPin, modifier = mapModifier)
         when (vm.screen) {
             Screen.SETUP -> SetupScreen(vm)
             Screen.EXPLORE -> Explore(vm)
@@ -133,83 +157,110 @@ fun BitMapsApp(vm: AppViewModel, controller: MapController, onExit: () -> Unit) 
 
 private fun distanceTo(vm: AppViewModel, p: Place): String? = vm.here()?.let { Units.short(Geo.distance(it, p.pos)) }
 
-// ---------------- Explore ----------------
+// ---------------- Explore (Bloom) ----------------
 
 @Composable
 private fun BoxScope.Explore(vm: AppViewModel) {
+    val context = LocalContext.current
+    val voice = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { r ->
+        r.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let(vm::voiceQuery)
+    }
     Column(
-        Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 12.dp).fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 16.dp).padding(top = 12.dp, bottom = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        SearchBar(vm, Modifier.padding(horizontal = 16.dp))
+        // Search pill
         Row(
-            Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            Modifier
+                .fillMaxWidth()
+                .height(62.dp)
+                .clip(RoundedCornerShape(31.dp))
+                .background(C.Glass)
+                .clickable(onClickLabel = "Search") { vm.openSearch() }
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            categories.forEach { c ->
-                val (emoji, _) = placeEmoji(c.query)
-                val shape = RoundedCornerShape(20.dp)
-                Row(
-                    Modifier
-                        .height(40.dp)
-                        .clip(shape)
-                        .background(C.Glass)
-                        .border(1.dp, C.Outline, shape)
-                        .clickable(role = Role.Button) { vm.searchCategory(c) }
-                        .padding(start = 12.dp, end = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(emoji, fontSize = 17.sp)
-                    Text(c.label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                }
+            Box(Modifier.size(46.dp).clip(CircleShape).background(C.Accent), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.Search, null, tint = C.OnAccent, modifier = Modifier.size(22.dp))
+            }
+            Text("Search bitMaps", color = C.Dim, fontSize = 17.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+            Box(
+                Modifier.size(44.dp).clip(CircleShape).clickable(role = Role.Button, onClickLabel = "Search by voice") {
+                    val i = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                        .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                        .putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "Where to?")
+                    runCatching { voice.launch(i) }.onFailure {
+                        android.widget.Toast.makeText(context, "No voice typing app on this phone", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                },
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.Rounded.Mic, "Search by voice", tint = C.Accent, modifier = Modifier.size(24.dp)) }
+            Cookie(
+                46.dp, C.AccentDeep, shape = Cookie12,
+                modifier = Modifier.clickable(role = Role.Button, onClickLabel = "Settings") { vm.openSettings() },
+            ) { Text("⚙️", fontSize = 20.sp) }
+        }
+
+        // Map tile (the map itself is drawn behind, clipped to this spot)
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .onGloballyPositioned { vm.mapTile = it.boundsInRoot() }
+                .clip(RoundedCornerShape(TileRadius)),
+        ) {
+            Text(
+                "📍 ${vm.hereName ?: if (vm.location == null) "Finding you…" else "You're here"}",
+                color = C.OnAccent, fontWeight = FontWeight.Bold, fontSize = 14.sp,
+                modifier = Modifier.padding(14.dp).clip(RoundedCornerShape(18.dp)).background(C.Accent).padding(horizontal = 14.dp, vertical = 8.dp),
+            )
+            Cookie(
+                64.dp, C.Accent,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp)
+                    .clickable(role = Role.Button, onClickLabel = "Center on my location") { vm.recenter() },
+            ) {
+                Icon(Icons.Rounded.Navigation, "Center on my location", tint = C.OnAccent, modifier = Modifier.size(28.dp).rotate(45f))
+            }
+            vm.update?.let { u ->
+                Text(
+                    "🎉 Update ${u.version}",
+                    color = C.OnAccentDeep, fontWeight = FontWeight.Bold, fontSize = 13.sp,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(14.dp).clip(RoundedCornerShape(18.dp)).background(C.AccentDeep)
+                        .clickable(role = Role.Button) { vm.showUpdate = true }.padding(horizontal = 12.dp, vertical = 8.dp),
+                )
             }
         }
-    }
 
-    Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
-        Box(Modifier.fillMaxWidth().padding(end = 16.dp, bottom = 12.dp), contentAlignment = Alignment.CenterEnd) {
-            Box(
-                Modifier
-                    .size(52.dp)
-                    .shadow(14.dp, RoundedCornerShape(18.dp), ambientColor = C.Violet, spotColor = C.Violet)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(C.gradient)
-                    .clickable(role = Role.Button, onClickLabel = "Center on my location") { vm.recenter() },
-                contentAlignment = Alignment.Center,
-            ) { Icon(Icons.Rounded.Navigation, "Center on my location", tint = Color.White, modifier = Modifier.size(22.dp)) }
+        // Tiles
+        Row(Modifier.fillMaxWidth().height(178.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            RecentTile(vm, vm.recents.firstOrNull(), Modifier.weight(1f).fillMaxHeight())
+            Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                HomeTile(vm, Modifier.fillMaxWidth().weight(1f))
+                SecondTile(vm, vm.recents.getOrNull(1), Modifier.fillMaxWidth().weight(1f))
+            }
         }
+
         if (vm.settings.musicOnMap) {
             val now by vm.music.now.collectAsState()
-            now?.let { MusicBar(vm, it, Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) }
+            now?.let { MusicBar(vm, it) }
         }
-        Sheet {
-            Column(Modifier.navigationBarsPadding().padding(bottom = 12.dp)) {
-                vm.update?.let { u ->
-                    val shape = RoundedCornerShape(18.dp)
-                    Row(
-                        Modifier.fillMaxWidth().padding(bottom = 12.dp).clip(shape).background(C.gradient)
-                            .clickable(role = Role.Button) { vm.showUpdate = true }.padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Text("🎉", fontSize = 22.sp)
-                        Column(Modifier.weight(1f)) {
-                            Text("bitMaps ${u.version} is here", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                            Text("Tap to update", color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp)
-                        }
-                        Text("›", color = Color.White, fontSize = 24.sp)
-                    }
-                }
-                SectionTitle("🕘 Recent")
-                Spacer(Modifier.height(6.dp))
-                if (vm.recents.isEmpty()) {
-                    Text(
-                        if (vm.location == null) "Finding your location…" else "Search for a place, or long-press the map to drop a pin.",
-                        color = C.Dim, fontSize = 14.sp, modifier = Modifier.padding(vertical = 14.dp),
-                    )
-                } else {
-                    vm.recents.take(3).forEach { p -> PlaceRow(p, distanceTo(vm, p)) { vm.open(p) } }
+
+        // Category squircles
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            categories.take(4).forEachIndexed { i, c ->
+                val (emoji, _) = placeEmoji(c.query)
+                val light = i % 2 == 0
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(
+                        Modifier
+                            .size(76.dp)
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(if (light) C.Accent else C.AccentDeep)
+                            .clickable(role = Role.Button, onClickLabel = c.label) { vm.searchCategory(c) },
+                        contentAlignment = Alignment.Center,
+                    ) { Text(emoji, fontSize = 34.sp) }
+                    Text(c.label, color = C.Dim, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 7.dp))
                 }
             }
         }
@@ -217,27 +268,97 @@ private fun BoxScope.Explore(vm: AppViewModel) {
 }
 
 @Composable
-private fun SearchBar(vm: AppViewModel, modifier: Modifier = Modifier) {
-    val shape = RoundedCornerShape(29.dp)
+private fun RecentTile(vm: AppViewModel, p: Place?, modifier: Modifier) {
+    Box(
+        modifier
+            .clip(RoundedCornerShape(TileRadius))
+            .background(C.Glass)
+            .clickable(enabled = p != null) { p?.let(vm::open) }
+            .padding(18.dp),
+    ) {
+        Text("🕘 Recent", color = C.Dim, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        Cookie(74.dp, C.Accent, shape = Cookie5, modifier = Modifier.align(Alignment.TopEnd).padding(top = 0.dp)) {
+            Text(if (p != null) placeEmoji(p.kind, p.name).first else "🔍", fontSize = 34.sp)
+        }
+        Column(Modifier.align(Alignment.BottomStart)) {
+            Text(
+                p?.name ?: "Nothing yet", fontSize = 19.sp, fontWeight = FontWeight.ExtraBold, lineHeight = 22.sp,
+                maxLines = 2, overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                if (p != null) listOfNotNull(p.category.ifBlank { null }, distanceTo(vm, p)).joinToString(" · ") else "Search a place to start",
+                color = C.Dim, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun HomeTile(vm: AppViewModel, modifier: Modifier) {
+    val h = vm.home
     Row(
         modifier
-            .fillMaxWidth()
-            .height(58.dp)
-            .shadow(16.dp, shape)
-            .clip(shape)
-            .background(C.Glass)
-            .border(1.dp, C.Outline, shape)
-            .clickable(onClickLabel = "Search") { vm.openSearch() }
-            .padding(start = 18.dp, end = 8.dp),
+            .clip(RoundedCornerShape(30.dp))
+            .background(C.Accent)
+            .clickable(role = Role.Button) { if (h != null) vm.goHome() else vm.openSearch() }
+            .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        ToggleLogo()
-        Text("Search bitMaps", color = C.Dim, fontSize = 16.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-        Box(
-            Modifier.size(42.dp).clip(CircleShape).background(C.gradient).clickable(role = Role.Button, onClickLabel = "Settings") { vm.openSettings() },
-            contentAlignment = Alignment.Center,
-        ) { Icon(Icons.Rounded.Settings, "Settings", tint = Color.White, modifier = Modifier.size(20.dp)) }
+        Cookie(46.dp, C.AccentDeep, shape = Cookie12) { Text("🏠", fontSize = 21.sp) }
+        Column {
+            Text("Home", color = C.OnAccent.copy(alpha = 0.75f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                when {
+                    h == null -> "Set home"
+                    vm.homeMinutes == 0 -> "You're home"
+                    vm.homeMinutes != null -> "${vm.homeMinutes} min"
+                    else -> distanceTo(vm, h) ?: "Go"
+                },
+                color = C.OnAccent, fontSize = 21.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SecondTile(vm: AppViewModel, p: Place?, modifier: Modifier) {
+    Column(
+        modifier
+            .clip(RoundedCornerShape(30.dp))
+            .background(C.Glass)
+            .clickable(enabled = p != null) { p?.let(vm::open) }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(if (p != null) placeEmoji(p.kind, p.name).first else "🧭", fontSize = 20.sp)
+            Spacer(Modifier.weight(1f))
+            Text(p?.let { distanceTo(vm, it) } ?: "", color = C.Dim, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        }
+        Wave(Modifier.fillMaxWidth().height(14.dp))
+        Text(p?.name ?: "Explore nearby", fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** The squiggle from the Bloom widgets. */
+@Composable
+private fun Wave(modifier: Modifier) {
+    val color = C.Accent
+    androidx.compose.foundation.Canvas(modifier) {
+        val path = androidx.compose.ui.graphics.Path()
+        val w = size.width
+        val h = size.height
+        val mid = h / 2
+        path.moveTo(0f, mid)
+        val waves = 2.5f
+        val steps = 60
+        for (i in 1..steps) {
+            val x = w * i / steps
+            val y = mid + (h / 2.6f) * kotlin.math.sin(2 * Math.PI * waves * i / steps).toFloat()
+            path.lineTo(x, y)
+        }
+        drawPath(path, color, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.5.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round))
     }
 }
 
@@ -351,7 +472,19 @@ private fun BoxScope.PlaceScreen(vm: AppViewModel) {
                 }
             }
             if (p.detail.isNotBlank()) Text(p.detail, color = C.Text, fontSize = 15.sp)
-            GradientButton("Directions", { vm.directions() }, Modifier.fillMaxWidth(), emoji = "🧭")
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                GradientButton("Directions", { vm.directions() }, Modifier.weight(1f), emoji = "🧭")
+                val isHome = vm.isHome(p)
+                Box(
+                    Modifier
+                        .height(58.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(if (isHome) C.AccentDeep else C.Surface)
+                        .clickable(role = Role.Button, onClickLabel = if (isHome) "Remove home" else "Set as home") { vm.setHome(if (isHome) null else p) }
+                        .padding(horizontal = 16.dp),
+                    contentAlignment = Alignment.Center,
+                ) { Text(if (isHome) "🏠 Home ✓" else "🏠 Set home", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = if (isHome) C.OnAccentDeep else C.Text) }
+            }
             Text(
                 "✏️  Wrong name or missing? Fix the map",
                 color = C.Lilac, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
@@ -410,7 +543,7 @@ private fun BoxScope.RouteScreen(vm: AppViewModel) {
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(m.emoji, fontSize = 16.sp)
-                    Text(m.label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (on) Color.White else C.Text)
+                    Text(m.label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (on) C.OnAccent else C.Text)
                 }
             }
         }

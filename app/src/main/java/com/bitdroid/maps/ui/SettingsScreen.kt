@@ -136,7 +136,7 @@ fun SettingsScreen(vm: AppViewModel) {
                                 .border(1.dp, if (on) Color.Transparent else C.Outline, shape)
                                 .clickable(role = Role.RadioButton) { s.units = u },
                             contentAlignment = Alignment.Center,
-                        ) { Text(u.label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (on) Color.White else C.Text) }
+                        ) { Text(u.label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (on) C.OnAccent else C.Text) }
                     }
                 }
             }
@@ -225,7 +225,7 @@ private fun Toggle(emoji: String, title: String, subtitle: String?, checked: Boo
                 checked = checked,
                 onCheckedChange = onChange,
                 colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.White,
+                    checkedThumbColor = C.OnAccent,
                     checkedTrackColor = C.Violet,
                     uncheckedThumbColor = C.Dim,
                     uncheckedTrackColor = C.Surface,
@@ -240,7 +240,7 @@ private fun Toggle(emoji: String, title: String, subtitle: String?, checked: Boo
 private fun SmallButton(text: String, onClick: () -> Unit) {
     Text(
         text,
-        color = Color.White,
+        color = C.OnAccent,
         fontSize = 13.sp,
         fontWeight = FontWeight.SemiBold,
         modifier = Modifier
