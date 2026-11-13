@@ -251,7 +251,7 @@ private fun SearchScreen(vm: AppViewModel) {
             ) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", tint = C.Text) }
             BasicTextField(
                 value = vm.query,
-                onValueChange = vm::setQuery,
+                onValueChange = vm::updateQuery,
                 singleLine = true,
                 textStyle = TextStyle(fontFamily = Body, fontSize = 16.sp, color = C.Text, fontWeight = FontWeight.Medium),
                 cursorBrush = SolidColor(C.Violet),
@@ -267,7 +267,7 @@ private fun SearchScreen(vm: AppViewModel) {
             )
             if (vm.query.isNotEmpty()) {
                 Box(
-                    Modifier.size(44.dp).clip(CircleShape).clickable(role = Role.Button, onClickLabel = "Clear") { vm.setQuery("") },
+                    Modifier.size(44.dp).clip(CircleShape).clickable(role = Role.Button, onClickLabel = "Clear") { vm.updateQuery("") },
                     contentAlignment = Alignment.Center,
                 ) { Icon(Icons.Rounded.Close, "Clear", tint = C.Dim) }
             } else {

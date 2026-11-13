@@ -98,7 +98,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun openSearch() { screen = Screen.SEARCH }
 
-    fun setQuery(q: String) {
+    fun updateQuery(q: String) {
         query = q
         searchJob?.cancel()
         if (q.isBlank()) { results = emptyList(); searching = false; searchError = null; return }
@@ -315,7 +315,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 if (label.isNotBlank()) open(Place("geo:$la,$lo", label, String.format(java.util.Locale.US, "%.5f, %.5f", la, lo), "Place", "pin", la, lo))
                 else dropPin(la, lo)
             }
-            q.isNotBlank() -> { screen = Screen.SEARCH; setQuery(q) }
+            q.isNotBlank() -> { screen = Screen.SEARCH; updateQuery(q) }
             lat != 0.0 || lon != 0.0 -> dropPin(lat, lon)
         }
     }
