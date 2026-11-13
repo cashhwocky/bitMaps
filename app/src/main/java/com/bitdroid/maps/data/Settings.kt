@@ -12,6 +12,10 @@ enum class UnitChoice(val label: String) { AUTO("Automatic"), MILES("Miles"), KI
 class Settings(context: Context) {
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
+    // First launch + updates
+    var setupDone by bool("setup_done", false)
+    var autoUpdates by bool("auto_updates", true)
+
     // Navigation
     var voice by bool("voice", true)
     var keepScreenOn by bool("keep_screen_on", true)

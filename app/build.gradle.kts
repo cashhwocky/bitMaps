@@ -18,8 +18,8 @@ android {
         applicationId = "com.bitdroid.maps"
         minSdk = 31
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.1.0"
+        versionCode = 3
+        versionName = "0.2.0"
 
         // Pixels are arm64 only; keeping one ABI keeps the APK (map engine) small.
         ndk { abiFilters += listOf("arm64-v8a") }
@@ -91,6 +91,7 @@ dependencies {
     // Map rendering (open source, no API key) and HTTP for search + routing.
     implementation("org.maplibre.gl:android-sdk:13.6.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("androidx.work:work-runtime-ktx:2.10.1")
 
 
     testImplementation("junit:junit:4.13.2")

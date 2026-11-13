@@ -159,6 +159,14 @@ fun SettingsScreen(vm: AppViewModel) {
                 }
             }
 
+            Group("🔄", "Updates") {
+                Toggle("🔔", "Check automatically", "Get notified when a new version is out", s.autoUpdates) { vm.setAutoUpdates(it) }
+                Item("⬆️", "bitMaps $version", vm.updateMessage ?: vm.update?.let { "Version ${it.version} is available" } ?: "Check GitHub for a newer version") {
+                    if (vm.update != null) SmallButton("Update") { vm.showUpdate = true }
+                    else SmallButton(if (vm.checkingUpdate) "Checking…" else "Check") { vm.checkForUpdate(manual = true) }
+                }
+            }
+
             Group("ℹ️", "About") {
                 Item("🗺️", "bitMaps $version", "Made by Alex Desrosier for bitDroid") {}
                 Item("🧱", "Map data", "© OpenStreetMap contributors · tiles by OpenFreeMap") {

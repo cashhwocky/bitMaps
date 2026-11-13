@@ -85,7 +85,7 @@ fun BitMapsApp(vm: AppViewModel, controller: MapController, onExit: () -> Unit) 
             when (vm.screen) {
                 Screen.ROUTE, Screen.NAV -> controller.showRoutes(vm.routes, vm.selected, vm.place)
                 Screen.PLACE -> { controller.showRoutes(emptyList(), 0, null); controller.showPin(vm.place) }
-                Screen.SETTINGS, Screen.VOICE -> {}
+                Screen.SETTINGS, Screen.VOICE, Screen.SETUP -> {}
                 else -> { controller.showRoutes(emptyList(), 0, null); controller.showPin(null) }
             }
         }
@@ -110,7 +110,7 @@ fun BitMapsApp(vm: AppViewModel, controller: MapController, onExit: () -> Unit) 
                     if (vm.following) controller.follow(vm.settings.tilt3d)
                     else vm.routes.firstOrNull()?.let { controller.fit(it.points, 300, 200) }
                 }
-                Screen.SETTINGS, Screen.VOICE -> {}
+                Screen.SETTINGS, Screen.VOICE, Screen.SETUP -> {}
             }
         }
     }
@@ -118,6 +118,7 @@ fun BitMapsApp(vm: AppViewModel, controller: MapController, onExit: () -> Unit) 
     Box(Modifier.fillMaxSize().background(C.Bg)) {
         MapSurface(controller, onLongPress = vm::dropPin, modifier = Modifier.fillMaxSize())
         when (vm.screen) {
+            Screen.SETUP -> SetupScreen(vm)
             Screen.EXPLORE -> Explore(vm)
             Screen.SEARCH -> SearchScreen(vm)
             Screen.PLACE -> PlaceScreen(vm)
@@ -126,6 +127,7 @@ fun BitMapsApp(vm: AppViewModel, controller: MapController, onExit: () -> Unit) 
             Screen.SETTINGS -> SettingsScreen(vm)
             Screen.VOICE -> VoiceScreen(vm)
         }
+        if (vm.showUpdate) vm.update?.let { UpdateSheet(vm, it) }
     }
 }
 
@@ -183,6 +185,22 @@ private fun BoxScope.Explore(vm: AppViewModel) {
         }
         Sheet {
             Column(Modifier.navigationBarsPadding().padding(bottom = 12.dp)) {
+                vm.update?.let { u ->
+                    val shape = RoundedCornerShape(18.dp)
+                    Row(
+                        Modifier.fillMaxWidth().padding(bottom = 12.dp).clip(shape).background(C.gradient)
+                            .clickable(role = Role.Button) { vm.showUpdate = true }.padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text("🎉", fontSize = 22.sp)
+                        Column(Modifier.weight(1f)) {
+                            Text("bitMaps ${u.version} is here", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Text("Tap to update", color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp)
+                        }
+                        Text("›", color = Color.White, fontSize = 24.sp)
+                    }
+                }
                 SectionTitle("🕘 Recent")
                 Spacer(Modifier.height(6.dp))
                 if (vm.recents.isEmpty()) {
@@ -462,4 +480,38 @@ fun RecenterButton(vm: AppViewModel, modifier: Modifier = Modifier) {
 @Composable
 fun SlideIn(visible: Boolean, content: @Composable () -> Unit) {
     AnimatedVisibility(visible, enter = fadeIn() + slideInVertically(), exit = fadeOut() + slideOutVertically()) { content() }
+}
+
+/** "New version" sheet: notes, then download + install inside the app. */
+@Composable
+private fun UpdateSheet(vm: AppViewModel, u: com.bitdroid.maps.data.Update) {
+    Box(
+        Modifier.fillMaxSize().background(Color(0xB3000000)).clickable(role = Role.Button, onClickLabel = "Close") { if (vm.updateProgress == null) vm.showUpdate = false },
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        Sheet(Modifier.clickable(enabled = false) {}) {
+            Column(Modifier.navigationBarsPadding().padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text("🎉 bitMaps ${u.version}", fontFamily = Display, fontWeight = FontWeight.Bold, fontSize = 24.sp)
+                if (u.notes.isNotBlank()) {
+                    Text(
+                        u.notes.lines().filter { it.isNotBlank() && !it.startsWith("**Full Changelog") }.take(12).joinToString("\n"),
+                        color = C.Dim, fontSize = 14.sp, lineHeight = 20.sp,
+                    )
+                }
+                val p = vm.updateProgress
+                if (p != null) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(Modifier.fillMaxWidth().height(10.dp).clip(CircleShape).background(C.Surface)) {
+                            Box(Modifier.fillMaxWidth(p).height(10.dp).clip(CircleShape).background(C.gradient3))
+                        }
+                        Text("Downloading… ${(p * 100).toInt()}%", color = C.Dim, fontSize = 14.sp)
+                    }
+                } else {
+                    GradientButton("Update now", { vm.installUpdate() }, Modifier.fillMaxWidth(), emoji = "⬇️")
+                }
+                vm.updateMessage?.let { Text(it, color = C.Lilac, fontSize = 14.sp) }
+                if (u.sizeBytes > 0) Text("${u.sizeBytes / 1_000_000} MB · downloads and installs right here", color = C.Dim, fontSize = 12.sp)
+            }
+        }
+    }
 }

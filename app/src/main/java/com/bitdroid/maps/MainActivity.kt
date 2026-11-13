@@ -24,7 +24,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        if (savedInstanceState == null) vm.handleGeo(intent?.data)
+        if (savedInstanceState == null) {
+            vm.handleGeo(intent?.data)
+            if (intent?.getBooleanExtra(EXTRA_SHOW_UPDATE, false) == true) vm.checkForUpdate(manual = true)
+        }
 
         setContent {
             val controller = remember { MapController(this) }
@@ -32,8 +35,9 @@ class MainActivity : ComponentActivity() {
                 vm.onPermissionsChanged()
             }
             LaunchedEffect(Unit) {
+                // First launch: the setup screen asks for everything. After that, just make sure location is on.
                 if (vm.tracker.hasPermission()) vm.onPermissionsChanged()
-                else askLocation.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+                else if (vm.settings.setupDone) askLocation.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
             }
             // Keep the screen awake while navigating (Settings → Keep screen on).
             val awake = vm.screen == Screen.NAV && vm.settings.keepScreenOn
@@ -48,6 +52,11 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         vm.handleGeo(intent.data)
+        if (intent.getBooleanExtra(EXTRA_SHOW_UPDATE, false)) vm.checkForUpdate(manual = true)
+    }
+
+    companion object {
+        const val EXTRA_SHOW_UPDATE = "show_update"
     }
 
     override fun onResume() {

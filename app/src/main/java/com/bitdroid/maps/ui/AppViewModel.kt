@@ -17,6 +17,7 @@ import com.bitdroid.maps.data.Place
 import com.bitdroid.maps.data.Recents
 import com.bitdroid.maps.data.Route
 import com.bitdroid.maps.data.Settings
+import com.bitdroid.maps.data.Updater
 import com.bitdroid.maps.data.Valhalla
 import com.bitdroid.maps.nav.LocationTracker
 import com.bitdroid.maps.nav.Music
@@ -30,7 +31,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.net.URLDecoder
 
-enum class Screen { EXPLORE, SEARCH, PLACE, ROUTE, NAV, SETTINGS, VOICE }
+enum class Screen { SETUP, EXPLORE, SEARCH, PLACE, ROUTE, NAV, SETTINGS, VOICE }
 
 data class Category(val label: String, val query: String, val tag: String)
 
@@ -50,7 +51,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val voice = Voice(app, settings)
     private val recentsStore = Recents(app)
 
-    var screen by mutableStateOf(Screen.EXPLORE); private set
+    var screen by mutableStateOf(if (settings.setupDone) Screen.EXPLORE else Screen.SETUP); private set
     /** Where Back from Settings goes. */
     private var beforeSettings = Screen.EXPLORE
 
@@ -84,8 +85,75 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** Bumped when the camera should jump (place opened, route found, overview…). */
     var cameraTick by mutableStateOf(0); private set
 
+    // In-app updates
+    var update by mutableStateOf<com.bitdroid.maps.data.Update?>(null); private set
+    var showUpdate by mutableStateOf(false)
+    var updateProgress by mutableStateOf<Float?>(null); private set
+    var updateMessage by mutableStateOf<String?>(null); private set
+    var checkingUpdate by mutableStateOf(false); private set
+
     init {
         viewModelScope.launch { tracker.location.collect { it?.let(::onLocation) } }
+        Updater.schedule(app, settings.autoUpdates)
+        if (settings.autoUpdates) checkForUpdate(manual = false)
+    }
+
+    fun finishSetup() {
+        settings.setupDone = true
+        screen = Screen.EXPLORE
+        onPermissionsChanged()
+        cameraTick++
+    }
+
+    fun setAutoUpdates(on: Boolean) {
+        settings.autoUpdates = on
+        Updater.schedule(getApplication(), on)
+    }
+
+    fun checkForUpdate(manual: Boolean) {
+        viewModelScope.launch {
+            checkingUpdate = true
+            updateMessage = null
+            try {
+                update = Updater.check(getApplication())
+                if (manual) {
+                    if (update != null) showUpdate = true else updateMessage = "✅ You're on the latest version."
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                if (manual) updateMessage = "Couldn't check for updates. Check your connection."
+            } finally {
+                checkingUpdate = false
+            }
+        }
+    }
+
+    /** Downloads the new APK inside the app and hands it to Android's installer. */
+    fun installUpdate() {
+        val u = update ?: return
+        val app = getApplication<Application>()
+        if (!Updater.canInstall(app)) {
+            runCatching { app.startActivity(Updater.installPermissionIntent(app)) }
+            updateMessage = "Allow bitMaps to install updates, then tap Update again."
+            return
+        }
+        if (updateProgress != null) return
+        viewModelScope.launch {
+            updateMessage = null
+            updateProgress = 0f
+            try {
+                val apk = Updater.download(app, u) { p -> updateProgress = p }
+                updateMessage = "Installing…"
+                Updater.install(app, apk)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                updateMessage = "Download failed. Try again."
+            } finally {
+                updateProgress = null
+            }
+        }
     }
 
     // ---------- voice ----------
@@ -308,7 +376,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** Returns false when there's nothing to go back to (the app should close). */
     fun back(): Boolean {
         when (screen) {
-            Screen.EXPLORE -> return false
+            Screen.EXPLORE, Screen.SETUP -> return false
             Screen.SEARCH -> { screen = Screen.EXPLORE; query = ""; results = emptyList() }
             Screen.PLACE -> { place = null; screen = Screen.EXPLORE }
             Screen.ROUTE -> { routeJob?.cancel(); routing = false; routes = emptyList(); routeError = null; screen = Screen.PLACE; cameraTick++ }
