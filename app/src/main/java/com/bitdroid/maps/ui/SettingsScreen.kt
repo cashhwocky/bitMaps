@@ -85,7 +85,13 @@ fun SettingsScreen(vm: AppViewModel) {
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             Group("🧭", "Navigation") {
-                Toggle("🗣️", "Voice guidance", "Spoken turn-by-turn directions", s.voice) { s.voice = it }
+                Toggle("🔊", "Voice guidance", "Spoken turn-by-turn directions", s.voice) { s.voice = it }
+                val voiceName = if (s.voiceId == com.bitdroid.maps.data.Voices.SYSTEM) "Phone voice" else com.bitdroid.maps.data.Voices.byId(s.voiceId)?.name ?: "Amy"
+                Box(Modifier.clickable(role = Role.Button) { vm.openVoice() }) {
+                    Item("🗣️", "Voice", voiceName) {
+                        Text("›", fontSize = 24.sp, color = C.Dim, modifier = Modifier.padding(end = 6.dp))
+                    }
+                }
                 Toggle("💡", "Keep screen on", "While you're navigating", s.keepScreenOn) { s.keepScreenOn = it }
                 Toggle("🏙️", "3D view", "Tilt the map while navigating", s.tilt3d) { s.tilt3d = it }
             }

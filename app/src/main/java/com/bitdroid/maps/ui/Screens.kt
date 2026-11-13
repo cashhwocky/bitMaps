@@ -85,14 +85,17 @@ fun BitMapsApp(vm: AppViewModel, controller: MapController, onExit: () -> Unit) 
             when (vm.screen) {
                 Screen.ROUTE, Screen.NAV -> controller.showRoutes(vm.routes, vm.selected, vm.place)
                 Screen.PLACE -> { controller.showRoutes(emptyList(), 0, null); controller.showPin(vm.place) }
-                Screen.SETTINGS -> {}
+                Screen.SETTINGS, Screen.VOICE -> {}
                 else -> { controller.showRoutes(emptyList(), 0, null); controller.showPin(null) }
             }
         }
     }
     LaunchedEffect(vm.location) {
         val loc = vm.location ?: return@LaunchedEffect
-        controller.whenReady { controller.showLocation(loc) }
+        controller.whenReady {
+            controller.showLocation(loc)
+            if (vm.screen == Screen.NAV && vm.following && !controller.isFollowing) controller.follow(vm.settings.tilt3d)
+        }
     }
     LaunchedEffect(vm.cameraTick) {
         controller.onTrackingDismissed = { vm.following = false }
@@ -105,7 +108,7 @@ fun BitMapsApp(vm: AppViewModel, controller: MapController, onExit: () -> Unit) 
                     if (vm.following) controller.follow(vm.settings.tilt3d)
                     else vm.routes.firstOrNull()?.let { controller.fit(it.points, 300, 200) }
                 }
-                Screen.SETTINGS -> {}
+                Screen.SETTINGS, Screen.VOICE -> {}
             }
         }
     }
@@ -119,6 +122,7 @@ fun BitMapsApp(vm: AppViewModel, controller: MapController, onExit: () -> Unit) 
             Screen.ROUTE -> RouteScreen(vm)
             Screen.NAV -> NavScreen(vm)
             Screen.SETTINGS -> SettingsScreen(vm)
+            Screen.VOICE -> VoiceScreen(vm)
         }
     }
 }
@@ -328,6 +332,19 @@ private fun BoxScope.PlaceScreen(vm: AppViewModel) {
             }
             if (p.detail.isNotBlank()) Text(p.detail, color = C.Text, fontSize = 15.sp)
             GradientButton("Directions", { vm.directions() }, Modifier.fillMaxWidth(), emoji = "🧭")
+            Text(
+                "✏️  Wrong name or missing? Fix the map",
+                color = C.Lilac, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable(role = Role.Button) {
+                        // Opens an OpenStreetMap note at this spot; volunteers (or you) fix the map for everyone.
+                        val url = "https://www.openstreetmap.org/note/new?lat=${p.lat}&lon=${p.lon}#map=19/${p.lat}/${p.lon}"
+                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                    }
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+            )
         }
     }
 }

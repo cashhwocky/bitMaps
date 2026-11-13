@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.bitdroid.maps.data.Census
 import com.bitdroid.maps.data.Geo
 import com.bitdroid.maps.data.LatLon
 import com.bitdroid.maps.data.Mode
@@ -17,17 +18,21 @@ import com.bitdroid.maps.data.Recents
 import com.bitdroid.maps.data.Route
 import com.bitdroid.maps.data.Settings
 import com.bitdroid.maps.data.Valhalla
+import com.bitdroid.maps.data.VoiceStore
+import com.bitdroid.maps.data.Voices
 import com.bitdroid.maps.nav.LocationTracker
 import com.bitdroid.maps.nav.Music
 import com.bitdroid.maps.nav.Navigator
 import com.bitdroid.maps.nav.Progress
 import com.bitdroid.maps.nav.Voice
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.net.URLDecoder
 
-enum class Screen { EXPLORE, SEARCH, PLACE, ROUTE, NAV, SETTINGS }
+enum class Screen { EXPLORE, SEARCH, PLACE, ROUTE, NAV, SETTINGS, VOICE }
 
 data class Category(val label: String, val query: String, val tag: String)
 
@@ -44,7 +49,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val settings = Settings(app)
     val tracker = LocationTracker(app)
     val music = Music(app)
-    private val voice = Voice(app)
+    val voiceStore = VoiceStore(app)
+    private val voice = Voice(app, settings, voiceStore)
     private val recentsStore = Recents(app)
 
     var screen by mutableStateOf(Screen.EXPLORE); private set
@@ -83,7 +89,43 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         viewModelScope.launch { tracker.location.collect { it?.let(::onLocation) } }
+        // Unpack the built-in voice (Amy) in the background on first launch.
+        viewModelScope.launch {
+            val v = Voices.byId(settings.voiceId) ?: Voices.all.first { it.bundled }
+            if (v.bundled && voiceStore.install(v)) voice.reload()
+        }
     }
+
+    // ---------- voice picker ----------
+
+    val sampleLine get() = "In ${com.bitdroid.maps.data.Units.spoken(152.0)}, turn right onto Main Street."
+
+    fun openVoice() { screen = Screen.VOICE }
+
+    fun pickVoice(id: String) {
+        if (id == Voices.SYSTEM) {
+            settings.voiceId = id
+            voice.reload()
+            voice.preview(sampleLine, id)
+            return
+        }
+        val v = Voices.byId(id) ?: return
+        viewModelScope.launch {
+            if (voiceStore.install(v)) {
+                settings.voiceId = id
+                voice.reload()
+                voice.preview(sampleLine, id)
+            }
+        }
+    }
+
+    fun previewVoice(id: String) {
+        if (id == Voices.SYSTEM) { voice.preview(sampleLine, id); return }
+        val v = Voices.byId(id) ?: return
+        viewModelScope.launch { if (voiceStore.install(v)) voice.preview("Hi, I'm ${v.name}. ${sampleLine}", id) }
+    }
+
+    fun testVoice() = voice.preview(sampleLine)
 
     fun onPermissionsChanged() {
         tracker.start()
@@ -104,7 +146,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (q.isBlank()) { results = emptyList(); searching = false; searchError = null; return }
         searchJob = viewModelScope.launch {
             delay(300)
-            runSearch { Photon.search(q, here()) }
+            runSearch {
+                if (!Census.looksLikeAddress(q)) return@runSearch Photon.search(q, here())
+                // Addresses: ask OpenStreetMap and the US Census at the same time; exact house matches go first.
+                coroutineScope {
+                    val osm = async { runCatching { Photon.search(q, here()) }.getOrDefault(emptyList()) }
+                    val census = async { delay(250); runCatching { Census.search(q) }.getOrDefault(emptyList()) }
+                    val c = census.await()
+                    c + osm.await().filter { p -> c.none { Geo.distance(it.pos, p.pos) < 30 } }
+                }
+            }
         }
     }
 
@@ -115,13 +166,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         searchJob = viewModelScope.launch { runSearch { Photon.search(c.query, here(), osmTag = c.tag, nearbyOnly = here() != null) } }
     }
 
-    private suspend fun runSearch(block: suspend () -> List<Place>) {
+    private suspend fun runSearch(keepOrder: Boolean = false, block: suspend () -> List<Place>) {
         searching = true
         searchError = null
         try {
             val found = block()
             val me = here()
-            results = if (me != null) found.sortedBy { Geo.distance(me, it.pos) } else found
+            // Exact address matches stay on top; everything else is sorted by distance.
+            val exact = found.filter { it.id.startsWith("census:") }
+            val rest = found.filterNot { it.id.startsWith("census:") }
+            results = exact + if (me != null && !keepOrder) rest.sortedBy { Geo.distance(me, it.pos) } else rest
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -212,6 +266,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         muted = !settings.voice
         voice.muted = muted
         screen = Screen.NAV
+        cameraTick++
         location?.let(::onLocation)
     }
 
@@ -289,6 +344,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             Screen.PLACE -> { place = null; screen = Screen.EXPLORE }
             Screen.ROUTE -> { routeJob?.cancel(); routing = false; routes = emptyList(); routeError = null; screen = Screen.PLACE; cameraTick++ }
             Screen.NAV -> end()
+            Screen.VOICE -> screen = Screen.SETTINGS
             Screen.SETTINGS -> {
                 screen = beforeSettings
                 if (screen == Screen.ROUTE) computeRoutes()

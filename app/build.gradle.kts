@@ -18,8 +18,15 @@ android {
         applicationId = "com.bitdroid.maps"
         minSdk = 31
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
+
+        // Pixels are arm64 only; keeping one ABI keeps the APK (map engine + voice engine) small.
+        ndk { abiFilters += listOf("arm64-v8a") }
+    }
+
+    androidResources {
+        noCompress += listOf("onnx")
     }
 
     signingConfigs {
@@ -87,6 +94,10 @@ dependencies {
     // Map rendering (open source, no API key) and HTTP for search + routing.
     implementation("org.maplibre.gl:android-sdk:13.6.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // Natural offline voices (Piper models) and unpacking downloaded voices.
+    implementation("com.k2fsa.sherpa.onnx:sherpa-onnx-android:1.13.2")
+    implementation("org.apache.commons:commons-compress:1.27.1")
 
     testImplementation("junit:junit:4.13.2")
 }

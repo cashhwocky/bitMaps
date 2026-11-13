@@ -139,6 +139,12 @@ class MapController(private val context: Context) {
         }
     }
 
+    /** Line width that grows as you zoom in, so the route stays bold and smooth up close. */
+    private fun byZoom(at12: Float, at19: Float): Expression = Expression.interpolate(
+        Expression.exponential(1.4f), Expression.zoom(),
+        Expression.stop(12f, at12), Expression.stop(19f, at19),
+    )
+
     private fun addOverlays(s: Style) {
         val firstLabel = s.layers.firstOrNull { it is SymbolLayer }?.id
         fun below(layer: Layer) { if (firstLabel != null) s.addLayerBelow(layer, firstLabel) else s.addLayer(layer) }
@@ -153,7 +159,7 @@ class MapController(private val context: Context) {
         below(
             LineLayer("bm-alt-line", "bm-alt").withProperties(
                 PropertyFactory.lineColor(Color.parseColor("#4A5263")),
-                PropertyFactory.lineWidth(6f),
+                PropertyFactory.lineWidth(byZoom(5f, 16f)),
                 PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
                 PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
                 PropertyFactory.lineOpacity(0.85f),
@@ -168,8 +174,8 @@ class MapController(private val context: Context) {
         below(
             LineLayer("bm-route-glow", "bm-route").withProperties(
                 PropertyFactory.lineGradient(gradient),
-                PropertyFactory.lineWidth(18f),
-                PropertyFactory.lineBlur(10f),
+                PropertyFactory.lineWidth(byZoom(14f, 40f)),
+                PropertyFactory.lineBlur(byZoom(8f, 22f)),
                 PropertyFactory.lineOpacity(0.6f),
                 PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
                 PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
@@ -178,7 +184,7 @@ class MapController(private val context: Context) {
         below(
             LineLayer("bm-route-line", "bm-route").withProperties(
                 PropertyFactory.lineGradient(gradient),
-                PropertyFactory.lineWidth(7f),
+                PropertyFactory.lineWidth(byZoom(6f, 20f)),
                 PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
                 PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
             ),
@@ -206,7 +212,25 @@ class MapController(private val context: Context) {
     private val empty get() = FeatureCollection.fromFeatures(emptyArray<Feature>())
 
     private fun line(points: List<LatLon>) =
-        Feature.fromGeometry(LineString.fromLngLats(points.map { Point.fromLngLat(it.lon, it.lat) }))
+        Feature.fromGeometry(LineString.fromLngLats(smooth(points).map { Point.fromLngLat(it.lon, it.lat) }))
+
+    /** Rounds sharp corners (two passes of Chaikin's corner cutting) so turns draw as smooth curves. */
+    private fun smooth(points: List<LatLon>): List<LatLon> {
+        var pts = points
+        repeat(2) {
+            if (pts.size < 3) return pts
+            val out = ArrayList<LatLon>(pts.size * 2)
+            out.add(pts.first())
+            for (i in 0 until pts.size - 1) {
+                val a = pts[i]; val b = pts[i + 1]
+                out.add(LatLon(0.75 * a.lat + 0.25 * b.lat, 0.75 * a.lon + 0.25 * b.lon))
+                out.add(LatLon(0.25 * a.lat + 0.75 * b.lat, 0.25 * a.lon + 0.75 * b.lon))
+            }
+            out.add(pts.last())
+            pts = out
+        }
+        return pts
+    }
 
     private fun GeoJsonSource.put(f: Feature?) {
         if (f != null) setGeoJson(f) else setGeoJson(empty)
@@ -279,7 +303,7 @@ class MapController(private val context: Context) {
             lc.isLocationComponentEnabled = true
             lc.renderMode = RenderMode.COMPASS
             lc.addOnCameraTrackingChangedListener(object : OnCameraTrackingChangedListener {
-                override fun onCameraTrackingDismissed() { onTrackingDismissed?.invoke() }
+                override fun onCameraTrackingDismissed() { isFollowing = false; onTrackingDismissed?.invoke() }
                 override fun onCameraTrackingChanged(currentMode: Int) {}
             })
             locationOn = true
@@ -287,22 +311,37 @@ class MapController(private val context: Context) {
         lc.forceLocationUpdate(loc)
     }
 
-    /** Navigation camera: follows you, rotated to your heading, tilted. */
+    var isFollowing = false
+        private set
+
+    /**
+     * Navigation camera: close in on your arrow, rotated to your heading, tilted,
+     * with your arrow in the lower part of the screen so you see the road ahead.
+     */
     fun follow(tilt: Boolean) {
         val m = map ?: return
         if (!locationOn) return
+        val top = context.resources.displayMetrics.heightPixels * 0.42
+        m.moveCamera(
+            CameraUpdateFactory.newCameraPosition(
+                CameraPosition.Builder(m.cameraPosition).padding(0.0, top, 0.0, 0.0).build(),
+            ),
+        )
         val lc = m.locationComponent
         lc.cameraMode = CameraMode.TRACKING_GPS
         lc.renderMode = RenderMode.GPS
-        lc.zoomWhileTracking(17.0)
-        lc.tiltWhileTracking(if (tilt) 50.0 else 0.0)
+        lc.zoomWhileTracking(18.2, 1200)
+        lc.tiltWhileTracking(if (tilt) 58.0 else 0.0, 1200)
+        isFollowing = true
     }
 
     fun stopFollowing() {
         val m = map ?: return
+        isFollowing = false
         if (!locationOn) return
         m.locationComponent.cameraMode = CameraMode.NONE
         m.locationComponent.renderMode = RenderMode.COMPASS
+        m.moveCamera(CameraUpdateFactory.newCameraPosition(CameraPosition.Builder(m.cameraPosition).padding(0.0, 0.0, 0.0, 0.0).build()))
     }
 }
 

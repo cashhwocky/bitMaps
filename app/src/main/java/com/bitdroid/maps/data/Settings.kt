@@ -20,6 +20,11 @@ class Settings(context: Context) {
     var avoidTolls by bool("avoid_tolls", false)
     var avoidFerries by bool("avoid_ferries", false)
 
+    // Voice
+    var voiceId by text("voice_id", "amy")
+    var voiceSpeed by float("voice_speed", 1f)
+    var voicePitch by float("voice_pitch", 1f)
+
     // Music
     var musicInNav by bool("music_in_nav", true)
     var musicOnMap by bool("music_on_map", false)
@@ -61,6 +66,7 @@ class Settings(context: Context) {
         prefs.edit().putString(key, it).apply()
         applyServers()
     }
+    private fun float(key: String, def: Float) = Pref(prefs.getFloat(key, def)) { prefs.edit().putFloat(key, it).apply() }
     private fun choice(key: String, def: UnitChoice) = Pref(
         runCatching { UnitChoice.valueOf(prefs.getString(key, def.name) ?: def.name) }.getOrDefault(def),
     ) { prefs.edit().putString(key, it.name).apply(); applyUnits() }

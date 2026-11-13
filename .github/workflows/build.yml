@@ -30,6 +30,19 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
+      # Bundle the default natural voice (Amy, Piper via sherpa-onnx) into the APK.
+      - name: Fetch built-in voice
+        run: |
+          mkdir -p app/src/main/assets/voices/amy
+          curl -fsSL https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-amy-medium.tar.bz2 \
+            | tar xj --strip-components=1 -C app/src/main/assets/voices/amy
+          rm -f app/src/main/assets/voices/amy/MODEL_CARD app/src/main/assets/voices/amy/*.json
+          ls -la app/src/main/assets/voices/amy
+          for v in en_US-kristin-medium en_GB-jenny_dioco-medium en_US-ryan-medium; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" -L -I https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-$v.tar.bz2)
+            echo "voice $v -> $code"
+          done
+
       - uses: gradle/actions/setup-gradle@v4
 
       # Optional release signing. Add these repo secrets to sign with your own key:

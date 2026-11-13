@@ -195,3 +195,41 @@ object Valhalla {
         )
     }
 }
+
+/**
+ * US Census address lookup: free, no key. Fills in house numbers that OpenStreetMap is missing
+ * (e.g. "123 Oak St, Greensboro NC").
+ */
+object Census {
+    /** Looks like "123 Something …" (a house number and a street). */
+    fun looksLikeAddress(q: String): Boolean = Regex("""^\s*\d+[A-Za-z]?\s+\S+.*""").matches(q) && q.trim().split(Regex("\\s+")).size >= 3
+
+    suspend fun search(q: String): List<Place> {
+        val url = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress" +
+            "?address=${Http.enc(q)}&benchmark=Public_AR_Current&format=json"
+        val matches = JSONObject(Http.get(url)).optJSONObject("result")?.optJSONArray("addressMatches") ?: return emptyList()
+        val out = ArrayList<Place>()
+        for (i in 0 until matches.length()) {
+            val m = matches.getJSONObject(i)
+            val c = m.optJSONObject("coordinates") ?: continue
+            val full = m.optString("matchedAddress")
+            val parts = full.split(", ")
+            val street = parts.firstOrNull()?.titleCase() ?: continue
+            val rest = parts.drop(1).joinToString(", ") { if (it.length <= 2 || it.all(Char::isDigit)) it else it.titleCase() }
+            out.add(
+                Place(
+                    id = "census:$full",
+                    name = street,
+                    detail = rest,
+                    category = "Address",
+                    kind = "house",
+                    lat = c.getDouble("y"),
+                    lon = c.getDouble("x"),
+                ),
+            )
+        }
+        return out
+    }
+
+    private fun String.titleCase() = lowercase().split(' ').joinToString(" ") { w -> w.replaceFirstChar { it.titlecase() } }
+}
