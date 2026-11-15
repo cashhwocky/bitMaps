@@ -84,6 +84,15 @@ fun SettingsScreen(vm: AppViewModel) {
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).navigationBarsPadding(),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
+            Group("🎨", "App style") {
+                Box(Modifier.padding(vertical = 10.dp)) { StylePicker(vm) }
+            }
+
+            Group("🚗", "Your ride") {
+                Text("Shows where you are while navigating", color = C.Dim, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+                Box(Modifier.padding(vertical = 10.dp)) { VehiclePicker(vm) }
+            }
+
             Group("🧭", "Navigation") {
                 Toggle("🔊", "Voice guidance", "Spoken turn-by-turn directions", s.voice) { s.voice = it }
                 Box(Modifier.clickable(role = Role.Button) { vm.openVoice() }) {

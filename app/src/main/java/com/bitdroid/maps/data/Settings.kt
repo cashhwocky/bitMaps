@@ -8,6 +8,21 @@ import java.util.Locale
 
 enum class UnitChoice(val label: String) { AUTO("Automatic"), MILES("Miles"), KILOMETERS("Kilometers") }
 
+/** Look of the whole app. */
+enum class AppStyle(val label: String, val emoji: String, val description: String) {
+    MATERIAL_YOU("Material You", "🎨", "Wallpaper colors and wavy shapes, like bitDroid"),
+    CLASSIC("Classic", "🌌", "Dark with a violet-to-blue glow"),
+}
+
+/** What marks your position while navigating. */
+enum class Vehicle(val label: String, val emoji: String, val drawable: Int) {
+    ARROW("Arrow", "➤", com.bitdroid.maps.R.drawable.ic_puck_gps),
+    COUPE_ORANGE("Sports coupe · orange", "🧡", com.bitdroid.maps.R.drawable.ic_car_coupe_orange),
+    COUPE_PURPLE("Sports coupe · purple", "💜", com.bitdroid.maps.R.drawable.ic_car_coupe_purple),
+    COUPE_WHITE("Sports coupe · white", "🤍", com.bitdroid.maps.R.drawable.ic_car_coupe_white),
+    SEDAN("Sedan · silver", "🩶", com.bitdroid.maps.R.drawable.ic_car_sedan),
+}
+
 /** Everything on the Settings screen. Each value is Compose state, so the UI updates live. */
 class Settings(context: Context) {
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
@@ -34,6 +49,10 @@ class Settings(context: Context) {
 
     // Units
     var units by choice("units", UnitChoice.AUTO)
+
+    // Look
+    var appStyle by enumPref("app_style", AppStyle.MATERIAL_YOU)
+    var vehicle by enumPref("vehicle", Vehicle.ARROW)
 
     // Servers (self-hostable, so bitMaps never has to rely on anyone else)
     var routingServer by text("routing_server", Servers.VALHALLA)
@@ -69,6 +88,10 @@ class Settings(context: Context) {
         prefs.edit().putString(key, it).apply()
         applyServers()
     }
+    private inline fun <reified E : Enum<E>> enumPref(key: String, def: E) = Pref(
+        runCatching { enumValueOf<E>(prefs.getString(key, def.name) ?: def.name) }.getOrDefault(def),
+    ) { prefs.edit().putString(key, it.name).apply() }
+
     private fun float(key: String, def: Float) = Pref(prefs.getFloat(key, def)) { prefs.edit().putFloat(key, it).apply() }
     private fun choice(key: String, def: UnitChoice) = Pref(
         runCatching { UnitChoice.valueOf(prefs.getString(key, def.name) ?: def.name) }.getOrDefault(def),

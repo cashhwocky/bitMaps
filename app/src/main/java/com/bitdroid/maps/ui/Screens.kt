@@ -96,6 +96,26 @@ fun BitMapsApp(vm: AppViewModel, controller: MapController, onExit: () -> Unit) 
             }
         }
     }
+    val appContext = LocalContext.current
+    // App style changed: recolor the map to match.
+    LaunchedEffect(vm.settings.appStyle) {
+        val pal = paletteFor(vm.settings.appStyle, appContext)
+        controller.whenReady { controller.applyPalette(pal) }
+    }
+    // Arrow or car for your position.
+    LaunchedEffect(vm.settings.vehicle) {
+        val res = vm.settings.vehicle.drawable
+        controller.whenReady { controller.setVehicle(res) }
+    }
+    // The part of the route you've driven is drawn dimmer.
+    LaunchedEffect(vm.progress, vm.routes) {
+        val r = vm.routes.firstOrNull()
+        val p = vm.progress
+        if (vm.screen == Screen.NAV && r != null && p != null && r.length > 0) {
+            val done = (1.0 - p.remainingM / r.length).toFloat()
+            controller.whenReady { controller.setTraveled(done) }
+        }
+    }
     LaunchedEffect(vm.location, vm.navLocation) {
         // While navigating, draw the arrow snapped onto the route instead of the raw (drifting) GPS fix.
         val loc = (if (vm.screen == Screen.NAV) vm.navLocation else null) ?: vm.location ?: return@LaunchedEffect

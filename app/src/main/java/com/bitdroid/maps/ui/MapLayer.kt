@@ -53,13 +53,21 @@ import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
 
 /** Everything the app does to the map: dark styling, route lines, pins, camera and the location puck. */
-class MapController(private val context: Context, private val pal: MapPalette) {
+class MapController(private val context: Context, private var pal: MapPalette, private var vehicleRes: Int = com.bitdroid.maps.R.drawable.ic_puck_gps) {
     private var map: MapLibreMap? = null
     private var style: Style? = null
     private var locationOn = false
     private var routeSrc: GeoJsonSource? = null
     private var altSrc: GeoJsonSource? = null
     private var pinSrc: GeoJsonSource? = null
+    private var routeLine: LineLayer? = null
+    private var routeGlow: LineLayer? = null
+    private var routeCasing: LineLayer? = null
+    private var altLine: LineLayer? = null
+    private var pinDot: CircleLayer? = null
+    private var destDot: CircleLayer? = null
+    /** How much of the route you've already driven (0..1); that part is drawn dimmer. */
+    private var traveled = 0f
     private var destSrc: GeoJsonSource? = null
     private val pending = ArrayList<() -> Unit>()
     /** Called when the user drags the map while it was following them. */
@@ -137,6 +145,76 @@ class MapController(private val context: Context, private val pal: MapPalette) {
         }
     }
 
+    /**
+     * Route colors along the line. The part you've already driven is a dim, darker color so the road
+     * ahead stands out; the glow is only drawn ahead of you.
+     */
+    private fun routeGradient(glow: Boolean): Expression {
+        val dim = if (glow) android.graphics.Color.TRANSPARENT
+        else androidx.core.graphics.ColorUtils.blendARGB(pal.routeStart, pal.bg, 0.6f)
+        val p = traveled
+        return when {
+            p <= 0.002f -> Expression.interpolate(
+                Expression.linear(), Expression.lineProgress(),
+                Expression.stop(0f, Expression.color(pal.routeStart)),
+                Expression.stop(1f, Expression.color(pal.routeEnd)),
+            )
+            p >= 0.995f -> Expression.interpolate(
+                Expression.linear(), Expression.lineProgress(),
+                Expression.stop(0f, Expression.color(dim)),
+                Expression.stop(1f, Expression.color(dim)),
+            )
+            else -> Expression.interpolate(
+                Expression.linear(), Expression.lineProgress(),
+                Expression.stop(0f, Expression.color(dim)),
+                Expression.stop(p, Expression.color(dim)),
+                Expression.stop(p + 0.002f, Expression.color(pal.routeStart)),
+                Expression.stop(1f, Expression.color(pal.routeEnd)),
+            )
+        }
+    }
+
+    private fun refreshRouteColors() {
+        routeLine?.setProperties(PropertyFactory.lineGradient(routeGradient(glow = false)))
+        routeGlow?.setProperties(PropertyFactory.lineGradient(routeGradient(glow = true)))
+    }
+
+    /** Called as you drive: [fraction] of the route already behind you. */
+    fun setTraveled(fraction: Float) {
+        val f = fraction.coerceIn(0f, 1f)
+        if (kotlin.math.abs(f - traveled) < 0.001f) return
+        traveled = f
+        refreshRouteColors()
+    }
+
+    /** Switches the map to another color set (app style changed). */
+    fun applyPalette(p: MapPalette) {
+        if (p == pal) return
+        pal = p
+        val s = style ?: return
+        recolor(s)
+        routeCasing?.setProperties(PropertyFactory.lineColor(pal.bg))
+        altLine?.setProperties(PropertyFactory.lineColor(pal.alt))
+        pinDot?.setProperties(PropertyFactory.circleColor(pal.pin))
+        destDot?.setProperties(PropertyFactory.circleColor(pal.routeEnd))
+        refreshRouteColors()
+        if (locationOn) runCatching { map?.locationComponent?.applyStyle(puckOptions()) }
+    }
+
+    /** Arrow or car icon for your position while navigating. */
+    fun setVehicle(res: Int) {
+        if (res == vehicleRes) return
+        vehicleRes = res
+        if (locationOn) runCatching { map?.locationComponent?.applyStyle(puckOptions()) }
+    }
+
+    private fun puckOptions(): LocationComponentOptions = LocationComponentOptions.builder(context)
+        .foregroundDrawable(com.bitdroid.maps.R.drawable.ic_puck_dot)
+        .gpsDrawable(vehicleRes)
+        .accuracyColor(pal.pin)
+        .accuracyAlpha(0.12f)
+        .build()
+
     /** Line width that grows as you zoom in, so the route stays bold and smooth up close. */
     private fun byZoom(at12: Float, at19: Float): Expression = Expression.interpolate(
         Expression.exponential(1.4f), Expression.zoom(),
@@ -160,8 +238,9 @@ class MapController(private val context: Context, private val pal: MapPalette) {
         s.addSource(alt); s.addSource(route); s.addSource(pin); s.addSource(dest)
         altSrc = alt; routeSrc = route; pinSrc = pin; destSrc = dest
 
+        altLine = LineLayer("bm-alt-line", "bm-alt")
         below(
-            LineLayer("bm-alt-line", "bm-alt").withProperties(
+            altLine!!.withProperties(
                 PropertyFactory.lineColor(pal.alt),
                 PropertyFactory.lineWidth(byZoom(5f, 16f)),
                 PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
@@ -169,22 +248,20 @@ class MapController(private val context: Context, private val pal: MapPalette) {
                 PropertyFactory.lineOpacity(0.85f),
             ),
         )
-        val gradient = Expression.interpolate(
-            Expression.linear(), Expression.lineProgress(),
-            Expression.stop(0f, Expression.color(pal.routeStart)),
-            Expression.stop(1f, Expression.color(pal.routeEnd)),
-        )
+        val gradient = routeGradient(glow = false)
+        routeCasing = LineLayer("bm-route-casing", "bm-route")
         below(
-            LineLayer("bm-route-casing", "bm-route").withProperties(
+            routeCasing!!.withProperties(
                 PropertyFactory.lineColor(pal.bg),
                 PropertyFactory.lineWidth(byZoom(10f, 30f)),
                 PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
                 PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
             ),
         )
+        routeGlow = LineLayer("bm-route-glow", "bm-route")
         below(
-            LineLayer("bm-route-glow", "bm-route").withProperties(
-                PropertyFactory.lineGradient(gradient),
+            routeGlow!!.withProperties(
+                PropertyFactory.lineGradient(routeGradient(glow = true)),
                 PropertyFactory.lineWidth(byZoom(14f, 40f)),
                 PropertyFactory.lineBlur(byZoom(8f, 22f)),
                 PropertyFactory.lineOpacity(0.6f),
@@ -192,24 +269,27 @@ class MapController(private val context: Context, private val pal: MapPalette) {
                 PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
             ),
         )
+        routeLine = LineLayer("bm-route-line", "bm-route")
         below(
-            LineLayer("bm-route-line", "bm-route").withProperties(
+            routeLine!!.withProperties(
                 PropertyFactory.lineGradient(gradient),
                 PropertyFactory.lineWidth(byZoom(6f, 20f)),
                 PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
                 PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
             ),
         )
+        pinDot = CircleLayer("bm-pin-dot", "bm-pin")
         s.addLayer(
-            CircleLayer("bm-pin-dot", "bm-pin").withProperties(
+            pinDot!!.withProperties(
                 PropertyFactory.circleRadius(11f),
                 PropertyFactory.circleColor(pal.pin),
                 PropertyFactory.circleStrokeColor(Color.WHITE),
                 PropertyFactory.circleStrokeWidth(3.5f),
             ),
         )
+        destDot = CircleLayer("bm-dest-dot", "bm-dest")
         s.addLayer(
-            CircleLayer("bm-dest-dot", "bm-dest").withProperties(
+            destDot!!.withProperties(
                 PropertyFactory.circleRadius(10f),
                 PropertyFactory.circleColor(pal.routeEnd),
                 PropertyFactory.circleStrokeColor(Color.WHITE),
@@ -254,6 +334,7 @@ class MapController(private val context: Context, private val pal: MapPalette) {
     }
 
     fun showRoutes(routes: List<Route>, selected: Int, dest: Place?) {
+        if (traveled != 0f) { traveled = 0f; refreshRouteColors() }
         val main = routes.getOrNull(selected)
         routeSrc?.put(main?.let { line(it.points) })
         val others = routes.filterIndexed { i, _ -> i != selected }.map { line(it.points) }
@@ -299,12 +380,7 @@ class MapController(private val context: Context, private val pal: MapPalette) {
         val s = style ?: return
         val lc = m.locationComponent
         if (!locationOn) {
-            val options = LocationComponentOptions.builder(context)
-                .foregroundDrawable(com.bitdroid.maps.R.drawable.ic_puck_dot)
-                .gpsDrawable(com.bitdroid.maps.R.drawable.ic_puck_gps)
-                .accuracyColor(pal.pin)
-                .accuracyAlpha(0.12f)
-                .build()
+            val options = puckOptions()
             lc.activateLocationComponent(
                 LocationComponentActivationOptions.builder(context, s)
                     .useDefaultLocationEngine(false)

@@ -78,14 +78,44 @@ object C {
     var Green = Color(0xFFB5E6C4); private set
     val Red get() = Danger
 
-    val gradient: Brush get() = SolidColor(Accent)
-    val gradient3: Brush get() = SolidColor(Accent)
+    /** True for Material You (wavy cookie shapes); false for Classic (plain circles + gradients). */
+    var expressive = true; private set
+
+    val gradient: Brush get() = if (expressive) SolidColor(Accent) else Brush.linearGradient(listOf(Color(0xFF7C4DFF), Color(0xFF2F6BFF)))
+    val gradient3: Brush get() = if (expressive) SolidColor(Accent) else Brush.linearGradient(listOf(Color(0xFF7C4DFF), Color(0xFF2F6BFF), Color(0xFF22D3EE)))
 
     /** Wallpaper-tinted background glow (top-left accent, bottom-right tertiary), like the home screen. */
     var glowA = Color(0xFF3A2B57); private set
     var glowB = Color(0xFF1D3B3A); private set
 
+    /** The original bitMaps look: near-black with a violet → blue glow. */
+    fun applyClassic() {
+        expressive = false
+        Accent = Color(0xFF7C4DFF)
+        OnAccent = Color.White
+        AccentDeep = Color(0xFF2F6BFF)
+        OnAccentDeep = Color.White
+        AccentSoft = Color(0x47070A0D)
+        Danger = Color(0xFFE11D48)
+        OnDanger = Color.White
+        Bg = Color(0xFF090B10)
+        Sheet = Color(0xFF12151C)
+        Surface = Color(0xFF1A1E27)
+        SurfaceHigh = Color(0xFF1F2430)
+        Glass = Color(0xEB161A23)
+        Text = Color(0xFFF2F4F8)
+        Dim = Color(0xFF9AA3B2)
+        Hairline = Color(0xFF1E232D)
+        Outline = Color(0x14FFFFFF)
+        Cyan = Color(0xFF22D3EE)
+        Pink = Color(0xFFF472B6)
+        Green = Color(0xFF6EE7B7)
+        glowA = Color(0x337C4DFF)
+        glowB = Color(0x222F6BFF)
+    }
+
     fun apply(s: ColorScheme) {
+        expressive = true
         Accent = s.primary
         OnAccent = s.onPrimary
         AccentDeep = s.primaryContainer
@@ -119,6 +149,16 @@ data class MapPalette(
     val label: Int, val labelStrong: Int, val routeStart: Int, val routeEnd: Int, val alt: Int, val pin: Int,
 )
 
+/** The original dark map colors (Classic style). */
+val classicMapPalette = MapPalette(
+    bg = 0xFF0C0F15.toInt(), block = 0xFF161B24.toInt(), road = 0xFF222936.toInt(), roadMajor = 0xFF3B3470.toInt(),
+    water = 0xFF0D1828.toInt(), park = 0xFF0F1D19.toInt(), label = 0xFF8B93A3.toInt(), labelStrong = 0xFFC5CBD6.toInt(),
+    routeStart = 0xFF7C4DFF.toInt(), routeEnd = 0xFF22D3EE.toInt(), alt = 0xFF4A5263.toInt(), pin = 0xFFF472B6.toInt(),
+)
+
+fun paletteFor(style: com.bitdroid.maps.data.AppStyle, context: Context): MapPalette =
+    if (style == com.bitdroid.maps.data.AppStyle.CLASSIC) classicMapPalette else mapPalette(bitScheme(context))
+
 fun mapPalette(s: ColorScheme) = MapPalette(
     bg = lerp(s.surface, s.surfaceContainerLow, 0.6f).toArgb(),
     block = s.surfaceContainer.toArgb(),
@@ -144,9 +184,9 @@ val Body: FontFamily = variable(R.font.inter, 300, 400, 500, 600, 700, 800)
 val Display: FontFamily = Body
 
 @Composable
-fun BitTheme(content: @Composable () -> Unit) {
+fun BitTheme(style: com.bitdroid.maps.data.AppStyle = com.bitdroid.maps.data.AppStyle.MATERIAL_YOU, content: @Composable () -> Unit) {
     val scheme = bitScheme(LocalContext.current)
-    C.apply(scheme)
+    if (style == com.bitdroid.maps.data.AppStyle.CLASSIC) C.applyClassic() else C.apply(scheme)
     MaterialTheme(colorScheme = scheme) {
         CompositionLocalProvider(LocalTextStyle provides TextStyle(fontFamily = Body, color = C.Text), content = content)
     }
@@ -174,9 +214,14 @@ class CookieShape(private val lobes: Int = 8, private val depth: Float = 0.09f) 
     }
 }
 
-val Cookie8 = CookieShape(8, 0.09f)
-val Cookie12 = CookieShape(12, 0.06f)
-val Cookie5 = CookieShape(5, 0.12f)
+private val cookie8 = CookieShape(8, 0.09f)
+private val cookie12 = CookieShape(12, 0.06f)
+private val cookie5 = CookieShape(5, 0.12f)
+
+/** Wavy cookies in Material You; plain circles in Classic. */
+val Cookie8: Shape get() = if (C.expressive) cookie8 else androidx.compose.foundation.shape.CircleShape
+val Cookie12: Shape get() = if (C.expressive) cookie12 else androidx.compose.foundation.shape.CircleShape
+val Cookie5: Shape get() = if (C.expressive) cookie5 else androidx.compose.foundation.shape.CircleShape
 
 /** A filled cookie with content centered on it. */
 @Composable
@@ -184,10 +229,10 @@ fun Cookie(
     size: Dp,
     color: Color,
     modifier: Modifier = Modifier,
-    shape: Shape = Cookie8,
+    shape: Shape? = null,
     content: @Composable BoxScope.() -> Unit = {},
 ) {
-    Box(modifier.size(size).clip(shape).background(color), contentAlignment = Alignment.Center, content = content)
+    Box(modifier.size(size).clip(shape ?: Cookie8).background(color), contentAlignment = Alignment.Center, content = content)
 }
 
 val TileRadius = 34.dp

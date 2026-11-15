@@ -17,8 +17,7 @@ import com.bitdroid.maps.ui.BitMapsApp
 import com.bitdroid.maps.ui.BitTheme
 import com.bitdroid.maps.ui.MapController
 import com.bitdroid.maps.ui.Screen
-import com.bitdroid.maps.ui.bitScheme
-import com.bitdroid.maps.ui.mapPalette
+import com.bitdroid.maps.ui.paletteFor
 
 class MainActivity : ComponentActivity() {
     private val vm: AppViewModel by viewModels()
@@ -32,7 +31,7 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            val controller = remember { MapController(this, mapPalette(bitScheme(this))) }
+            val controller = remember { MapController(this, paletteFor(vm.settings.appStyle, this), vm.settings.vehicle.drawable) }
             val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
                 vm.onPermissionsChanged()
             }
@@ -47,7 +46,7 @@ class MainActivity : ComponentActivity() {
                 if (awake) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             }
-            BitTheme { BitMapsApp(vm, controller, onExit = { finish() }) }
+            BitTheme(vm.settings.appStyle) { BitMapsApp(vm, controller, onExit = { finish() }) }
         }
     }
 

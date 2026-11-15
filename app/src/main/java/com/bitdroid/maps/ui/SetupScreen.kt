@@ -13,6 +13,8 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -101,6 +103,8 @@ fun SetupScreen(vm: AppViewModel) {
             "If Android says it's a restricted setting: Settings → Apps → bitMaps → ⋮ → Allow restricted settings, then come back.",
         ),
         Step("🔄", "In-app updates", "Lets bitMaps download and install its own updates right inside the app.", "Allow updates"),
+        Step("🚗", "Pick your ride", "What shows where you are while you navigate. You can change it anytime in Settings.", "Next"),
+        Step("🎨", "App style", "Material You follows your wallpaper colors. Classic keeps bitMaps' original dark look.", "Next"),
         Step("🎉", "You're all set", "Search a place, tap Directions, and go.", "Start exploring"),
     )
     val granted = when (step) {
@@ -145,7 +149,7 @@ fun SetupScreen(vm: AppViewModel) {
             ) {
                 Box(
                     Modifier
-                        .size(150.dp)
+                        .size(if (i == 5 || i == 6) 110.dp else 150.dp)
                         .clip(Cookie8)
                         .background(C.Accent),
                     contentAlignment = Alignment.Center,
@@ -154,6 +158,14 @@ fun SetupScreen(vm: AppViewModel) {
                 Text(s.title, fontFamily = Display, fontWeight = FontWeight.Bold, fontSize = 26.sp, textAlign = TextAlign.Center)
                 Spacer(Modifier.height(12.dp))
                 Text(s.body, color = C.Dim, fontSize = 16.sp, textAlign = TextAlign.Center, lineHeight = 23.sp)
+                if (i == 5) {
+                    Spacer(Modifier.height(24.dp))
+                    VehiclePicker(vm)
+                }
+                if (i == 6) {
+                    Spacer(Modifier.height(24.dp))
+                    StylePicker(vm)
+                }
                 if (s.note != null && i == step && !music) {
                     Spacer(Modifier.height(16.dp))
                     Text(
@@ -171,7 +183,7 @@ fun SetupScreen(vm: AppViewModel) {
             if (granted) "Next" else steps[step].button,
             {
                 when {
-                    granted || step == 0 || step == steps.lastIndex -> next()
+                    granted || step == 0 || step >= 5 -> next()
                     step == 1 -> askLocation.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
                     step == 2 -> askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
                     step == 3 -> runCatching { context.startActivity(vm.music.accessIntent()) }
@@ -196,3 +208,82 @@ fun SetupScreen(vm: AppViewModel) {
 private fun notificationsAllowed(context: android.content.Context) =
     android.os.Build.VERSION.SDK_INT < 33 ||
         context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+
+/** Arrow or car icons for your position while navigating. Also used in Settings. */
+@Composable
+fun VehiclePicker(vm: AppViewModel) {
+    val s = vm.settings
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+    ) {
+        com.bitdroid.maps.data.Vehicle.entries.forEach { v ->
+            val on = s.vehicle == v
+            val shape = RoundedCornerShape(22.dp)
+            Column(
+                Modifier
+                    .width(86.dp)
+                    .clip(shape)
+                    .background(if (on) C.AccentDeep else C.Surface)
+                    .border(2.dp, if (on) C.Accent else Color.Transparent, shape)
+                    .clickable(role = Role.RadioButton, onClickLabel = v.label) { s.vehicle = v }
+                    .padding(vertical = 12.dp, horizontal = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Box(Modifier.height(70.dp), contentAlignment = Alignment.Center) {
+                    androidx.compose.foundation.Image(
+                        androidx.compose.ui.res.painterResource(v.drawable), v.label,
+                        modifier = if (v == com.bitdroid.maps.data.Vehicle.ARROW) Modifier.size(58.dp) else Modifier.size(width = 34.dp, height = 68.dp),
+                    )
+                }
+                Text(
+                    v.label.substringBefore(" ·"), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
+                    color = if (on) C.OnAccentDeep else C.Text, modifier = Modifier.padding(top = 6.dp),
+                )
+                if (v.label.contains("·")) {
+                    Text(v.label.substringAfter("· "), fontSize = 11.sp, color = if (on) C.OnAccentDeep.copy(alpha = 0.8f) else C.Dim, textAlign = TextAlign.Center)
+                }
+            }
+        }
+    }
+}
+
+/** Material You or Classic. Also used in Settings. */
+@Composable
+fun StylePicker(vm: AppViewModel) {
+    val s = vm.settings
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        com.bitdroid.maps.data.AppStyle.entries.forEach { st ->
+            val on = s.appStyle == st
+            val shape = RoundedCornerShape(24.dp)
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(shape)
+                    .background(if (on) C.AccentDeep else C.Surface)
+                    .border(2.dp, if (on) C.Accent else Color.Transparent, shape)
+                    .clickable(role = Role.RadioButton, onClickLabel = st.label) { s.appStyle = st }
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                // Small preview swatch of each look.
+                Box(
+                    Modifier
+                        .size(48.dp)
+                        .clip(if (st == com.bitdroid.maps.data.AppStyle.MATERIAL_YOU) CookieShape(8, 0.1f) else CircleShape)
+                        .background(
+                            if (st == com.bitdroid.maps.data.AppStyle.MATERIAL_YOU) Brush.linearGradient(listOf(Color(0xFFD9CCF6), Color(0xFFB9A4F0)))
+                            else Brush.linearGradient(listOf(Color(0xFF7C4DFF), Color(0xFF2F6BFF))),
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) { Text(st.emoji, fontSize = 22.sp) }
+                Column(Modifier.weight(1f)) {
+                    Text(st.label, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = if (on) C.OnAccentDeep else C.Text)
+                    Text(st.description, fontSize = 13.sp, color = if (on) C.OnAccentDeep.copy(alpha = 0.8f) else C.Dim)
+                }
+                if (on) Text("✓", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = if (on) C.OnAccentDeep else C.Text)
+            }
+        }
+    }
+}
