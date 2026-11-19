@@ -40,12 +40,25 @@ object Http {
         .addInterceptor { chain -> chain.proceed(chain.request().newBuilder().header("User-Agent", UA).build()) }
         .build()
 
-    suspend fun get(url: String): String = withContext(Dispatchers.IO) {
-        client.newCall(Request.Builder().url(url).build()).execute().use { r ->
-            val body = r.body?.string() ?: ""
-            if (!r.isSuccessful) throw IOException("HTTP ${r.code}")
-            body
-        }
+    /** Cancellable GET: when a search is replaced or times out, the request is dropped at once. */
+    suspend fun get(url: String): String = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+        val call = client.newCall(Request.Builder().url(url).build())
+        cont.invokeOnCancellation { call.cancel() }
+        call.enqueue(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: IOException) {
+                if (cont.isActive) cont.resumeWith(Result.failure(e))
+            }
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                val result = runCatching {
+                    response.use { r ->
+                        val body = r.body?.string() ?: ""
+                        if (!r.isSuccessful) throw IOException("HTTP ${r.code}")
+                        body
+                    }
+                }
+                if (cont.isActive) cont.resumeWith(result)
+            }
+        })
     }
 
     suspend fun postJson(url: String, json: String): String = withContext(Dispatchers.IO) {

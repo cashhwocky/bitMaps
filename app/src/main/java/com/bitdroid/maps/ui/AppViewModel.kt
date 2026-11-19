@@ -272,10 +272,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val key = searchKey()
             Search.intent(q)?.let { intent ->
                 // "gas", "coffee near me"…: every one around you, closest first.
-                if (me != null) { runSearch { Search.nearby(intent, me, key, q) }; return@launch }
+                if (me != null) { runSearch { Search.nearby(intent, me, key, q, ::showPartial) }; return@launch }
             }
             if (!Census.looksLikeAddress(q)) {
-                runSearch(keepOrder = true) { Search.text(q, me, key) { quick -> if (quick.isNotEmpty()) results = quick } }
+                runSearch(keepOrder = true) { Search.text(q, me, key, ::showPartial) }
                 return@launch
             }
             runSearch {
@@ -303,10 +303,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val me = here()
             val intent = Search.intent(c.label)
             runSearch {
-                if (me != null && intent != null) Search.nearby(intent, me, searchKey(), c.query)
+                if (me != null && intent != null) Search.nearby(intent, me, searchKey(), c.query, ::showPartial)
                 else Photon.search(c.query, me, osmTag = c.tag, nearbyOnly = me != null)
             }
         }
+    }
+
+    /** First results are on screen: stop the loading spinner while the rest fills in quietly. */
+    private fun showPartial(list: List<Place>) {
+        if (list.isEmpty()) return
+        results = list
+        searching = false
     }
 
     private suspend fun runSearch(keepOrder: Boolean = false, block: suspend () -> List<Place>) {

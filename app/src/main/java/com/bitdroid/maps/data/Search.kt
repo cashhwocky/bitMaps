@@ -3,6 +3,7 @@ package com.bitdroid.maps.data
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
@@ -92,23 +93,26 @@ object Search {
     }
 
     /** Everything of one kind around you, closest first. */
-    suspend fun nearby(intent: Intent, near: LatLon, tomtomKey: String?, fallbackQuery: String): List<Place> = coroutineScope {
-        val osm = async { safe { Overpass.nearby(intent, near) } }
-        val tt = async { if (tomtomKey == null) emptyList() else safe { TomTomSearch.search(intent.tomtom, near, tomtomKey, limit = 40, radiusM = 25_000) } }
-        var all = merge(osm.await() + tt.await())
-        if (all.size < 3) {
-            // Overpass busy and no TomTom: fall back to Photon for this kind of place.
-            val tag = intent.tags.first().replace("\"", "").replace("=", ":").substringBefore("~")
-            all = merge(all + safe { Photon.search(fallbackQuery, near, osmTag = if (tag.contains(':')) tag else null) })
-        }
-        all.sortedBy { Geo.distance(near, it.pos) }
+    suspend fun nearby(intent: Intent, near: LatLon, tomtomKey: String?, fallbackQuery: String, partial: (List<Place>) -> Unit = {}): List<Place> = coroutineScope {
+        val osm = async { capped(7000) { Overpass.nearby(intent, near) } }
+        val tt = async { if (tomtomKey == null) emptyList() else capped(5000) { TomTomSearch.search(intent.tomtom, near, tomtomKey, limit = 40, radiusM = 25_000) } }
+        val tag = intent.tags.first().replace("\"", "").replace("=", ":").substringBefore("~")
+        val photon = async { capped(5000) { Photon.search(fallbackQuery, near, osmTag = if (tag.contains(':')) tag else null) } }
+        fun sorted(l: List<Place>) = merge(l).map { relabel(it, intent) }.sortedBy { Geo.distance(near, it.pos) }
+        // Fast sources first, OpenStreetMap's full list fills in when it lands (never more than ~7 s).
+        val quick = tt.await() + photon.await()
+        if (osm.isActive && quick.isNotEmpty()) partial(sorted(quick))
+        sorted(osm.await() + quick)
     }
+
+    /** Everything found for "gas" is labelled the same way ("Gas station", not "Petrol station"). */
+    private fun relabel(p: Place, intent: Intent): Place = if (p.kind == intent.kind || intent.kind == "restaurant") p.copy(category = intent.label) else p
 
     /** Names, chains, streets, cities: best text match first, then closest. */
     suspend fun text(query: String, near: LatLon?, tomtomKey: String?, partial: (List<Place>) -> Unit = {}): List<Place> = coroutineScope {
-        val photon = async { safe { Photon.search(query, near) } }
-        val tt = async { if (tomtomKey == null) emptyList() else safe { TomTomSearch.search(query, near, tomtomKey, limit = 25, radiusM = null) } }
-        val osmNames = async { if (near == null) emptyList() else safe { kotlinx.coroutines.delay(250); Overpass.named(query, near) } }
+        val photon = async { capped(5000) { Photon.search(query, near) } }
+        val tt = async { if (tomtomKey == null) emptyList() else capped(5000) { TomTomSearch.search(query, near, tomtomKey, limit = 25, radiusM = null) } }
+        val osmNames = async { if (near == null) emptyList() else capped(6000) { Overpass.named(query, near) } }
         val quick = merge(tt.await() + photon.await())
         // Show the fast results right away; the full OpenStreetMap name search lands a moment later.
         if (osmNames.isActive) partial(rank(quick, query, near))
@@ -152,6 +156,10 @@ object Search {
 
     fun norm(s: String) = s.lowercase(Locale.US).filter { it.isLetterOrDigit() }
 
+    /** A source that's slow or down never holds up the results: give up on it after [ms]. */
+    private suspend fun capped(ms: Long, block: suspend () -> List<Place>): List<Place> =
+        kotlinx.coroutines.withTimeoutOrNull(ms) { safe(block) } ?: emptyList()
+
     private suspend fun safe(block: suspend () -> List<Place>): List<Place> = try {
         block()
     } catch (e: CancellationException) {
@@ -173,9 +181,7 @@ object Overpass {
 
     suspend fun nearby(intent: Search.Intent, near: LatLon): List<Place> {
         val filter = intent.tags.joinToString("") { "[$it]" }
-        var out = run("nwr$filter(around:%d,%.6f,%.6f);", near, 15_000, intent)
-        if (out.size < 5) out = run("nwr$filter(around:%d,%.6f,%.6f);", near, 45_000, intent)
-        return out
+        return run("nwr$filter(around:%d,%.6f,%.6f);", near, 25_000, intent)
     }
 
     /** Places whose name or brand matches what you typed (ignores spaces, apostrophes and case). */
@@ -191,18 +197,20 @@ object Overpass {
     private suspend fun run(body: String, near: LatLon, radius: Int, intent: Search.Intent?, twice: Boolean = false): List<Place> {
         val b = if (twice) String.format(Locale.US, body, radius, near.lat, near.lon, radius, near.lat, near.lon)
         else String.format(Locale.US, body, radius, near.lat, near.lon)
-        val q = "[out:json][timeout:12];($b);out tags center 80;"
-        var last: Exception? = null
-        for (s in servers) {
-            try {
-                return parse(Http.get("$s?data=${Http.enc(q)}"), intent)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                last = e
+        val q = "[out:json][timeout:8];($b);out tags center 80;"
+        // Ask both servers at once and take whichever answers first.
+        val json = coroutineScope {
+            val ch = kotlinx.coroutines.channels.Channel<String?>(servers.size)
+            val jobs = servers.map { s -> launch { ch.send(try { Http.get("$s?data=${Http.enc(q)}") } catch (e: CancellationException) { throw e } catch (_: Exception) { null }) } }
+            var got: String? = null
+            for (i in servers.indices) {
+                got = ch.receive()
+                if (got != null) break
             }
-        }
-        throw last ?: Exception("Overpass unavailable")
+            jobs.forEach { it.cancel() }
+            got
+        } ?: throw Exception("Overpass unavailable")
+        return parse(json, intent)
     }
 
     private fun parse(json: String, intent: Search.Intent?): List<Place> {
@@ -271,7 +279,8 @@ object TomTomSearch {
                 name = poi.optString("name")
                 detail = listOf(street, city, state).filter { it.isNotBlank() }.joinToString(", ")
                 kind = kindFor(code, poi)
-                category = poi.optJSONArray("categories")?.optString(0)?.replaceFirstChar { it.titlecase() } ?: "Place"
+                category = labelFor(kind) ?: poi.optJSONArray("categories")?.optString(0)
+                    ?.replace("petrol", "gas", ignoreCase = true)?.replaceFirstChar { it.titlecase() } ?: "Place"
             } else {
                 val isAddress = type == "Point Address" || type == "Address Range"
                 name = if (isAddress && street.isNotBlank()) street else a.optString("freeformAddress").substringBefore(",")
@@ -283,6 +292,26 @@ object TomTomSearch {
             out.add(Place("tt:${r.optString("id")}", name, detail, category, kind, pos.getDouble("lat"), pos.getDouble("lon")))
         }
         return out
+    }
+
+    private fun labelFor(kind: String): String? = when (kind) {
+        "fuel" -> "Gas station"
+        "charging_station" -> "Charging station"
+        "cafe" -> "Cafe"
+        "fast_food" -> "Fast food"
+        "restaurant" -> "Restaurant"
+        "pub" -> "Bar"
+        "parking" -> "Parking"
+        "supermarket" -> "Grocery store"
+        "pharmacy" -> "Pharmacy"
+        "hospital" -> "Hospital"
+        "clinic" -> "Clinic"
+        "hotel" -> "Hotel"
+        "bank" -> "Bank"
+        "atm" -> "ATM"
+        "mall" -> "Shopping center"
+        "gym" -> "Gym"
+        else -> null
     }
 
     private fun kindFor(code: String, poi: JSONObject): String = when (code) {
