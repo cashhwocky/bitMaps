@@ -112,8 +112,8 @@ fun BitMapsApp(vm: AppViewModel, controller: MapController, onExit: () -> Unit) 
         val r = vm.routes.firstOrNull()
         val p = vm.progress
         if (vm.screen == Screen.NAV && r != null && p != null && r.length > 0) {
-            val done = (1.0 - p.remainingM / r.length).toFloat()
-            controller.whenReady { controller.setTraveled(done) }
+            val done = r.length - p.remainingM
+            controller.whenReady { controller.setTraveled(done, r.length) }
         }
     }
     LaunchedEffect(vm.location, vm.navLocation) {

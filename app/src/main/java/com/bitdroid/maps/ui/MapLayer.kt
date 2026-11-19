@@ -68,6 +68,9 @@ class MapController(private val context: Context, private var pal: MapPalette, p
     private var destDot: CircleLayer? = null
     /** How much of the route you've already driven (0..1); that part is drawn dimmer. */
     private var traveled = 0f
+    /** Width of the dim → bright edge as a fraction of the route (a few meters, whatever the route length). */
+    private var edge = 0.0005f
+    private var trailAnim: android.animation.ValueAnimator? = null
     private var destSrc: GeoJsonSource? = null
     private val pending = ArrayList<() -> Unit>()
     /** Called when the user drags the map while it was following them. */
@@ -154,7 +157,7 @@ class MapController(private val context: Context, private var pal: MapPalette, p
         else androidx.core.graphics.ColorUtils.blendARGB(pal.routeStart, pal.bg, 0.6f)
         val p = traveled
         return when {
-            p <= 0.002f -> Expression.interpolate(
+            p <= 0f -> Expression.interpolate(
                 Expression.linear(), Expression.lineProgress(),
                 Expression.stop(0f, Expression.color(pal.routeStart)),
                 Expression.stop(1f, Expression.color(pal.routeEnd)),
@@ -164,13 +167,16 @@ class MapController(private val context: Context, private var pal: MapPalette, p
                 Expression.stop(0f, Expression.color(dim)),
                 Expression.stop(1f, Expression.color(dim)),
             )
-            else -> Expression.interpolate(
-                Expression.linear(), Expression.lineProgress(),
-                Expression.stop(0f, Expression.color(dim)),
-                Expression.stop(p, Expression.color(dim)),
-                Expression.stop(p + 0.002f, Expression.color(pal.routeStart)),
-                Expression.stop(1f, Expression.color(pal.routeEnd)),
-            )
+            else -> {
+                val e = edge.coerceAtMost((1f - p) / 2f).coerceAtLeast(1e-6f)
+                Expression.interpolate(
+                    Expression.linear(), Expression.lineProgress(),
+                    Expression.stop(0f, Expression.color(dim)),
+                    Expression.stop(p, Expression.color(dim)),
+                    Expression.stop(p + e, Expression.color(pal.routeStart)),
+                    Expression.stop(1f, Expression.color(pal.routeEnd)),
+                )
+            }
         }
     }
 
@@ -179,12 +185,31 @@ class MapController(private val context: Context, private var pal: MapPalette, p
         routeGlow?.setProperties(PropertyFactory.lineGradient(routeGradient(glow = true)))
     }
 
-    /** Called as you drive: [fraction] of the route already behind you. */
-    fun setTraveled(fraction: Float) {
-        val f = fraction.coerceIn(0f, 1f)
-        if (kotlin.math.abs(f - traveled) < 0.001f) return
-        traveled = f
-        refreshRouteColors()
+    /**
+     * Called on every GPS fix with how many meters of the route are behind you. The dim edge sits right
+     * at your car and glides there over ~1 s, in step with the arrow's own animation, instead of jumping.
+     */
+    fun setTraveled(doneMeters: Double, totalMeters: Double) {
+        if (totalMeters <= 0) return
+        edge = (3.0 / totalMeters).toFloat()
+        val target = ((doneMeters - 2.0) / totalMeters).toFloat().coerceIn(0f, 1f)
+        trailAnim?.cancel()
+        val from = traveled
+        if (target <= from || target - from > 0.2f) {
+            // New route or a jump: snap straight there.
+            traveled = target
+            refreshRouteColors()
+            return
+        }
+        trailAnim = android.animation.ValueAnimator.ofFloat(from, target).apply {
+            duration = 1000
+            interpolator = android.view.animation.LinearInterpolator()
+            addUpdateListener {
+                traveled = it.animatedValue as Float
+                refreshRouteColors()
+            }
+            start()
+        }
     }
 
     /** Switches the map to another color set (app style changed). */
@@ -334,6 +359,7 @@ class MapController(private val context: Context, private var pal: MapPalette, p
     }
 
     fun showRoutes(routes: List<Route>, selected: Int, dest: Place?) {
+        trailAnim?.cancel()
         if (traveled != 0f) { traveled = 0f; refreshRouteColors() }
         val main = routes.getOrNull(selected)
         routeSrc?.put(main?.let { line(it.points) })
