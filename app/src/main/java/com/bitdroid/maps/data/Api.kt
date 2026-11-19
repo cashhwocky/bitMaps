@@ -157,6 +157,37 @@ object Valhalla {
         return out
     }
 
+    /** Snaps a route shape (e.g. TomTom's traffic route) onto the road network and returns its turns. */
+    suspend fun trace(points: List<LatLon>, mode: Mode): Route {
+        val units = if (Units.imperial) "miles" else "kilometers"
+        val lang = Locale.getDefault().toLanguageTag()
+        // Thin the shape so long trips stay small (about 1,500 points max, never closer than 25 m).
+        var total = 0.0
+        for (i in 1 until points.size) total += Geo.distance(points[i - 1], points[i])
+        val step = maxOf(25.0, total / 1500.0)
+        val shape = JSONArray()
+        var acc = 0.0
+        shape.put(JSONObject().put("lat", points.first().lat).put("lon", points.first().lon))
+        for (i in 1 until points.size - 1) {
+            acc += Geo.distance(points[i - 1], points[i])
+            if (acc >= step) {
+                shape.put(JSONObject().put("lat", points[i].lat).put("lon", points[i].lon))
+                acc = 0.0
+            }
+        }
+        shape.put(JSONObject().put("lat", points.last().lat).put("lon", points.last().lon))
+        val body = JSONObject()
+            .put("shape", shape)
+            .put("costing", mode.costing)
+            .put("shape_match", "map_snap")
+            .put("units", units)
+            .put("language", lang)
+            .put("directions_options", JSONObject().put("units", units).put("language", lang))
+        val json = JSONObject(Http.postJson("${Servers.valhalla.trimEnd('/')}/trace_route", body.toString()))
+        val trip = json.optJSONObject("trip") ?: throw IOException("No match")
+        return parseTrip(trip, if (Units.imperial) 1609.344 else 1000.0)
+    }
+
     private fun parseTrip(trip: JSONObject, toMeters: Double): Route {
         val legs = trip.getJSONArray("legs")
         val points = ArrayList<LatLon>()
@@ -300,11 +331,82 @@ object TomTom {
             if (avoid.tolls) sb.append("&avoid=tollRoads")
             if (avoid.ferries) sb.append("&avoid=ferries")
         }
+        // Classic TomTom routing: traffic + turn-by-turn in one call.
+        try {
+            val json = JSONObject(Http.get(sb.toString()))
+            val routes = json.optJSONArray("routes") ?: throw IOException("No route found")
+            val out = ArrayList<Route>()
+            for (i in 0 until routes.length()) out.add(parse(routes.getJSONObject(i)))
+            if (out.isNotEmpty() && out.first().points.size > 1) return out
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Newer MyTomTom keys may only allow the Orbis API: try that next.
+        }
+        return orbis(from, to, mode, key, avoid, heading)
+    }
+
+    /**
+     * Orbis Routing v2 gives the traffic-aware route + ETA but no turn instructions, so the exact
+     * route is then matched on the free Valhalla server to get the turns and voice prompts.
+     */
+    private suspend fun orbis(from: LatLon, to: LatLon, mode: Mode, key: String, avoid: Avoid, heading: Float?): List<Route> {
+        val travel = when (mode) { Mode.DRIVE -> "car"; Mode.BIKE -> "bicycle"; Mode.WALK -> "pedestrian" }
+        val sb = StringBuilder("https://api.tomtom.com/maps/orbis/routing/calculateRoute/")
+        sb.append("${from.lat},${from.lon}:${to.lat},${to.lon}/json?key=${Http.enc(key)}&apiVersion=2")
+        sb.append("&travelMode=$travel&traffic=live&maxAlternatives=2")
+        if (heading != null && mode == Mode.DRIVE) sb.append("&vehicleHeading=${heading.toInt()}")
+        if (mode != Mode.WALK) {
+            if (avoid.highways) sb.append("&avoid=motorways")
+            if (avoid.tolls) sb.append("&avoid=tollRoads")
+            if (avoid.ferries) sb.append("&avoid=ferries")
+        }
         val json = JSONObject(Http.get(sb.toString()))
         val routes = json.optJSONArray("routes") ?: throw IOException("No route found")
         val out = ArrayList<Route>()
-        for (i in 0 until routes.length()) out.add(parse(routes.getJSONObject(i)))
+        for (i in 0 until routes.length()) {
+            val r = routes.getJSONObject(i)
+            val pts = points(r)
+            if (pts.size < 2) continue
+            val sum = r.optJSONObject("summary") ?: JSONObject()
+            val time = sum.optDouble("travelTimeInSeconds", sum.optDouble("travelDurationInSeconds", 0.0))
+            val delay = sum.optDouble("trafficDelayInSeconds", sum.optDouble("trafficDelayDurationInSeconds", 0.0))
+            val matched = runCatching { Valhalla.trace(pts, mode) }.getOrNull() ?: continue
+            out.add(
+                Route(
+                    points = matched.points,
+                    maneuvers = matched.maneuvers,
+                    distanceM = sum.optDouble("lengthInMeters", matched.distanceM),
+                    durationS = if (time > 0) time else matched.durationS,
+                    via = matched.via,
+                    trafficDelayS = delay,
+                ),
+            )
+        }
         if (out.isEmpty()) throw IOException("No route found")
+        return out
+    }
+
+    /** Route geometry from either the classic (legs[].points) or GeoJSON (path.coordinates) shape. */
+    private fun points(r: JSONObject): List<LatLon> {
+        val out = ArrayList<LatLon>()
+        val legs = r.optJSONArray("legs")
+        if (legs != null) {
+            for (l in 0 until legs.length()) {
+                val pts = legs.getJSONObject(l).optJSONArray("points") ?: continue
+                for (p in 0 until pts.length()) {
+                    val o = pts.getJSONObject(p)
+                    out.add(LatLon(o.getDouble("latitude"), o.getDouble("longitude")))
+                }
+            }
+        }
+        if (out.isEmpty()) {
+            val coords = r.optJSONObject("path")?.optJSONArray("coordinates")
+            if (coords != null) for (i in 0 until coords.length()) {
+                val c = coords.getJSONArray(i)
+                out.add(LatLon(c.getDouble(1), c.getDouble(0)))
+            }
+        }
         return out
     }
 
