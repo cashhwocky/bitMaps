@@ -1,0 +1,17 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="54dp" android:height="54dp" android:viewportWidth="100" android:viewportHeight="100">
+    <!-- Google Maps-style navigation arrow: blue chevron, white outline, soft shadow. -->
+    <group android:translateY="3">
+        <path android:fillColor="#000000" android:fillAlpha="0.28"
+            android:pathData="M50,16 L80,86 L50,70 L20,86 Z" android:strokeColor="#000000" android:strokeAlpha="0.28" android:strokeWidth="12" android:strokeLineJoin="round" />
+    </group>
+    <path android:pathData="M50,12 L80,82 L50,66 L20,82 Z" android:strokeColor="#FFFFFFFF" android:strokeWidth="9" android:strokeLineJoin="round">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="50" android:startY="12" android:endX="50" android:endY="82">
+                <item android:offset="0" android:color="#FF4C8DF6"/>
+                <item android:offset="1" android:color="#FF1A5FD6"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

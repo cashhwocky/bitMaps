@@ -145,7 +145,7 @@ fun BitMapsApp(vm: AppViewModel, controller: MapController, onExit: () -> Unit) 
     // On Explore the map lives inside a rounded Bloom tile; everywhere else it fills the screen.
     val tile = vm.mapTile
     val density = androidx.compose.ui.platform.LocalDensity.current
-    val mapModifier = if (vm.screen == Screen.EXPLORE && tile != null) {
+    val mapModifier = if (vm.screen == Screen.EXPLORE && tile != null && vm.settings.appStyle == com.bitdroid.maps.data.AppStyle.MATERIAL_YOU) {
         with(density) {
             Modifier
                 .offset { androidx.compose.ui.unit.IntOffset(tile.left.toInt(), tile.top.toInt()) }
@@ -164,11 +164,11 @@ fun BitMapsApp(vm: AppViewModel, controller: MapController, onExit: () -> Unit) 
         MapSurface(controller, onLongPress = vm::dropPin, modifier = mapModifier)
         when (vm.screen) {
             Screen.SETUP -> SetupScreen(vm)
-            Screen.EXPLORE -> Explore(vm)
+            Screen.EXPLORE -> if (vm.settings.appStyle == com.bitdroid.maps.data.AppStyle.MATERIAL_YOU) Explore(vm) else ExploreMaps(vm)
             Screen.SEARCH -> SearchScreen(vm)
             Screen.PLACE -> PlaceScreen(vm)
             Screen.ROUTE -> RouteScreen(vm)
-            Screen.NAV -> NavScreen(vm)
+            Screen.NAV -> if (vm.settings.appStyle == com.bitdroid.maps.data.AppStyle.MATERIAL_YOU) NavScreen(vm) else NavMaps(vm)
             Screen.SETTINGS -> SettingsScreen(vm)
             Screen.VOICE -> VoiceScreen(vm)
         }

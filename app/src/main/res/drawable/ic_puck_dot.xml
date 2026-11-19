@@ -1,5 +1,6 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="28dp" android:height="28dp" android:viewportWidth="22" android:viewportHeight="22">
-    <path android:fillColor="@android:color/system_accent1_200"
-        android:pathData="M11,11m-8,0a8,8 0 1,1 16,0a8,8 0 1,1 -16,0" />
+    android:width="26dp" android:height="26dp" android:viewportWidth="26" android:viewportHeight="26">
+    <!-- Google-style location dot: blue with a white ring. -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M13,13m-12,0a12,12 0 1,1 24,0a12,12 0 1,1 -24,0" />
+    <path android:fillColor="#FF4C8DF6" android:pathData="M13,13m-8.5,0a8.5,8.5 0 1,1 17,0a8.5,8.5 0 1,1 -17,0" />
 </vector>

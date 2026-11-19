@@ -10,17 +10,19 @@ enum class UnitChoice(val label: String) { AUTO("Automatic"), MILES("Miles"), KI
 
 /** Look of the whole app. */
 enum class AppStyle(val label: String, val emoji: String, val description: String) {
+    MAPS("bitMaps", "🗺️", "Clean and simple, like Google Maps (default)"),
     MATERIAL_YOU("Material You", "🎨", "Wallpaper colors and wavy shapes, like bitDroid"),
     CLASSIC("Classic", "🌌", "Dark with a violet-to-blue glow"),
 }
 
 /** What marks your position while navigating. */
 enum class Vehicle(val label: String, val emoji: String, val drawable: Int) {
-    ARROW("Arrow", "➤", com.bitdroid.maps.R.drawable.ic_puck_gps),
-    COUPE_ORANGE("Sports coupe · orange", "🧡", com.bitdroid.maps.R.drawable.ic_car_coupe_orange),
-    COUPE_PURPLE("Sports coupe · purple", "💜", com.bitdroid.maps.R.drawable.ic_car_coupe_purple),
-    COUPE_WHITE("Sports coupe · white", "🤍", com.bitdroid.maps.R.drawable.ic_car_coupe_white),
-    SEDAN("Sedan · silver", "🩶", com.bitdroid.maps.R.drawable.ic_car_sedan),
+    ARROW("Arrow", "➤", com.bitdroid.maps.R.drawable.ic_puck_google),
+    COOKIE("Cookie arrow", "🍪", com.bitdroid.maps.R.drawable.ic_puck_gps),
+    COUPE_ORANGE("Z coupe · orange", "🧡", com.bitdroid.maps.R.drawable.ic_car_coupe_orange),
+    COUPE_PURPLE("Z coupe · purple", "💜", com.bitdroid.maps.R.drawable.ic_car_coupe_purple),
+    COUPE_WHITE("Z coupe · white", "🤍", com.bitdroid.maps.R.drawable.ic_car_coupe_white),
+    COUPE_BLACK("Z coupe · black", "🖤", com.bitdroid.maps.R.drawable.ic_car_coupe_black),
 }
 
 /** Everything on the Settings screen. Each value is Compose state, so the UI updates live. */
@@ -51,7 +53,7 @@ class Settings(context: Context) {
     var units by choice("units", UnitChoice.AUTO)
 
     // Look
-    var appStyle by enumPref("app_style", AppStyle.MATERIAL_YOU)
+    var appStyle by enumPref("app_style", AppStyle.MAPS)
     var vehicle by enumPref("vehicle", Vehicle.ARROW)
 
     // Servers (self-hostable, so bitMaps never has to rely on anyone else)
@@ -62,6 +64,12 @@ class Settings(context: Context) {
     var liveTraffic by bool("live_traffic", true)
 
     init {
+        // 0.5.0: switch everyone once to the new Google Maps-style look and the Google-style arrow.
+        if (!prefs.getBoolean("v050_look", false)) {
+            prefs.edit().putBoolean("v050_look", true).putString("app_style", AppStyle.MAPS.name).putString("vehicle", Vehicle.ARROW.name).apply()
+            appStyle = AppStyle.MAPS
+            vehicle = Vehicle.ARROW
+        }
         applyUnits()
         applyServers()
     }

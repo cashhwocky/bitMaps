@@ -233,7 +233,7 @@ fun VehiclePicker(vm: AppViewModel) {
                 Box(Modifier.height(70.dp), contentAlignment = Alignment.Center) {
                     androidx.compose.foundation.Image(
                         androidx.compose.ui.res.painterResource(v.drawable), v.label,
-                        modifier = if (v == com.bitdroid.maps.data.Vehicle.ARROW) Modifier.size(58.dp) else Modifier.size(width = 34.dp, height = 68.dp),
+                        modifier = if (v == com.bitdroid.maps.data.Vehicle.ARROW || v == com.bitdroid.maps.data.Vehicle.COOKIE) Modifier.size(54.dp) else Modifier.size(width = 32.dp, height = 68.dp),
                     )
                 }
                 Text(
@@ -273,8 +273,11 @@ fun StylePicker(vm: AppViewModel) {
                         .size(48.dp)
                         .clip(if (st == com.bitdroid.maps.data.AppStyle.MATERIAL_YOU) CookieShape(8, 0.1f) else CircleShape)
                         .background(
-                            if (st == com.bitdroid.maps.data.AppStyle.MATERIAL_YOU) Brush.linearGradient(listOf(Color(0xFFD9CCF6), Color(0xFFB9A4F0)))
-                            else Brush.linearGradient(listOf(Color(0xFF7C4DFF), Color(0xFF2F6BFF))),
+                            when (st) {
+                                com.bitdroid.maps.data.AppStyle.MATERIAL_YOU -> Brush.linearGradient(listOf(Color(0xFFD9CCF6), Color(0xFFB9A4F0)))
+                                com.bitdroid.maps.data.AppStyle.MAPS -> Brush.linearGradient(listOf(Color(0xFF2A2833), Color(0xFF3E2F78)))
+                                com.bitdroid.maps.data.AppStyle.CLASSIC -> Brush.linearGradient(listOf(Color(0xFF7C4DFF), Color(0xFF2F6BFF)))
+                            },
                         ),
                     contentAlignment = Alignment.Center,
                 ) { Text(st.emoji, fontSize = 22.sp) }

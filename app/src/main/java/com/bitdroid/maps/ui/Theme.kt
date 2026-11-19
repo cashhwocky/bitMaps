@@ -78,11 +78,40 @@ object C {
     var Green = Color(0xFFB5E6C4); private set
     val Red get() = Danger
 
-    /** True for Material You (wavy cookie shapes); false for Classic (plain circles + gradients). */
-    var expressive = true; private set
+    /** Which look is active. */
+    var style = com.bitdroid.maps.data.AppStyle.MAPS; private set
+    /** True for Material You (wavy cookie shapes); otherwise plain circles. */
+    val expressive get() = style == com.bitdroid.maps.data.AppStyle.MATERIAL_YOU
+    private val classic get() = style == com.bitdroid.maps.data.AppStyle.CLASSIC
 
-    val gradient: Brush get() = if (expressive) SolidColor(Accent) else Brush.linearGradient(listOf(Color(0xFF7C4DFF), Color(0xFF2F6BFF)))
-    val gradient3: Brush get() = if (expressive) SolidColor(Accent) else Brush.linearGradient(listOf(Color(0xFF7C4DFF), Color(0xFF2F6BFF), Color(0xFF22D3EE)))
+    val gradient: Brush get() = if (!classic) SolidColor(Accent) else Brush.linearGradient(listOf(Color(0xFF7C4DFF), Color(0xFF2F6BFF)))
+    val gradient3: Brush get() = if (!classic) SolidColor(Accent) else Brush.linearGradient(listOf(Color(0xFF7C4DFF), Color(0xFF2F6BFF), Color(0xFF22D3EE)))
+
+    /** "bitMaps" look: Google Maps-style dark, clean cards, violet accent. */
+    fun applyMaps() {
+        style = com.bitdroid.maps.data.AppStyle.MAPS
+        Accent = Color(0xFFB9A4F0)
+        OnAccent = Color(0xFF221A3A)
+        AccentDeep = Color(0xFF4B3B78)
+        OnAccentDeep = Color(0xFFEDE6F7)
+        AccentSoft = Color(0xFF33276A)
+        Danger = Color(0xFFF2B8B5)
+        OnDanger = Color(0xFF601410)
+        Bg = Color(0xFF1B1A22)
+        Sheet = Color(0xFF2A2833)
+        Surface = Color(0xFF34313E)
+        SurfaceHigh = Color(0xFF3F3B4B)
+        Glass = Color(0xFF2A2833)
+        Text = Color(0xFFE8E6EF)
+        Dim = Color(0xFFA8A2B8)
+        Hairline = Color(0xFF3A3745)
+        Outline = Color(0x14FFFFFF)
+        Cyan = Color(0xFF8AB4F8)
+        Pink = Color(0xFFF4B6D2)
+        Green = Color(0xFF81C995)
+        glowA = Color.Transparent
+        glowB = Color.Transparent
+    }
 
     /** Wallpaper-tinted background glow (top-left accent, bottom-right tertiary), like the home screen. */
     var glowA = Color(0xFF3A2B57); private set
@@ -90,7 +119,7 @@ object C {
 
     /** The original bitMaps look: near-black with a violet → blue glow. */
     fun applyClassic() {
-        expressive = false
+        style = com.bitdroid.maps.data.AppStyle.CLASSIC
         Accent = Color(0xFF7C4DFF)
         OnAccent = Color.White
         AccentDeep = Color(0xFF2F6BFF)
@@ -115,7 +144,7 @@ object C {
     }
 
     fun apply(s: ColorScheme) {
-        expressive = true
+        style = com.bitdroid.maps.data.AppStyle.MATERIAL_YOU
         Accent = s.primary
         OnAccent = s.onPrimary
         AccentDeep = s.primaryContainer
@@ -156,8 +185,18 @@ val classicMapPalette = MapPalette(
     routeStart = 0xFF7C4DFF.toInt(), routeEnd = 0xFF22D3EE.toInt(), alt = 0xFF4A5263.toInt(), pin = 0xFFF472B6.toInt(),
 )
 
-fun paletteFor(style: com.bitdroid.maps.data.AppStyle, context: Context): MapPalette =
-    if (style == com.bitdroid.maps.data.AppStyle.CLASSIC) classicMapPalette else mapPalette(bitScheme(context))
+/** Google Maps-style dark map with a violet tint (bitMaps style). */
+val mapsMapPalette = MapPalette(
+    bg = 0xFF211F29.toInt(), block = 0xFF2A2733.toInt(), road = 0xFF3A3646.toInt(), roadMajor = 0xFF6B5C8F.toInt(),
+    water = 0xFF1A2236.toInt(), park = 0xFF22302A.toInt(), label = 0xFFA79FBF.toInt(), labelStrong = 0xFFE8E6EF.toInt(),
+    routeStart = 0xFF8F74F0.toInt(), routeEnd = 0xFFB9A4F0.toInt(), alt = 0xFF5A5568.toInt(), pin = 0xFFB9A4F0.toInt(),
+)
+
+fun paletteFor(style: com.bitdroid.maps.data.AppStyle, context: Context): MapPalette = when (style) {
+    com.bitdroid.maps.data.AppStyle.CLASSIC -> classicMapPalette
+    com.bitdroid.maps.data.AppStyle.MAPS -> mapsMapPalette
+    com.bitdroid.maps.data.AppStyle.MATERIAL_YOU -> mapPalette(bitScheme(context))
+}
 
 fun mapPalette(s: ColorScheme) = MapPalette(
     bg = lerp(s.surface, s.surfaceContainerLow, 0.6f).toArgb(),
@@ -184,9 +223,13 @@ val Body: FontFamily = variable(R.font.inter, 300, 400, 500, 600, 700, 800)
 val Display: FontFamily = Body
 
 @Composable
-fun BitTheme(style: com.bitdroid.maps.data.AppStyle = com.bitdroid.maps.data.AppStyle.MATERIAL_YOU, content: @Composable () -> Unit) {
+fun BitTheme(style: com.bitdroid.maps.data.AppStyle = com.bitdroid.maps.data.AppStyle.MAPS, content: @Composable () -> Unit) {
     val scheme = bitScheme(LocalContext.current)
-    if (style == com.bitdroid.maps.data.AppStyle.CLASSIC) C.applyClassic() else C.apply(scheme)
+    when (style) {
+        com.bitdroid.maps.data.AppStyle.CLASSIC -> C.applyClassic()
+        com.bitdroid.maps.data.AppStyle.MAPS -> C.applyMaps()
+        com.bitdroid.maps.data.AppStyle.MATERIAL_YOU -> C.apply(scheme)
+    }
     MaterialTheme(colorScheme = scheme) {
         CompositionLocalProvider(LocalTextStyle provides TextStyle(fontFamily = Body, color = C.Text), content = content)
     }
