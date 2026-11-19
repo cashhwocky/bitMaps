@@ -18,8 +18,8 @@ android {
         applicationId = "com.bitdroid.maps"
         minSdk = 31
         targetSdk = 35
-        versionCode = 11
-        versionName = "0.5.0"
+        versionCode = 12
+        versionName = "0.5.1"
 
         // Live traffic: a free TomTom key from the TOMTOM_KEY repo secret (empty = no traffic, Valhalla only).
         buildConfigField("String", "TOMTOM_KEY", "\"${System.getenv("TOMTOM_KEY") ?: ""}\"")

@@ -1,5 +1,7 @@
 package com.bitdroid.maps.data
 
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -337,13 +339,28 @@ object TomTom {
             val routes = json.optJSONArray("routes") ?: throw IOException("No route found")
             val out = ArrayList<Route>()
             for (i in 0 until routes.length()) out.add(parse(routes.getJSONObject(i)))
-            if (out.isNotEmpty() && out.first().points.size > 1) return out
+            if (out.isNotEmpty() && out.first().points.size > 1) return snapAll(out, mode)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (_: Exception) {
             // Newer MyTomTom keys may only allow the Orbis API: try that next.
         }
         return orbis(from, to, mode, key, avoid, heading)
+    }
+
+    /**
+     * TomTom's road geometry is a different map than the OpenStreetMap tiles we draw, so its line can
+     * sit beside the road. Match each route onto the drawn roads (and their names/turns) with Valhalla,
+     * keeping TomTom's traffic-aware time. If matching fails, the TomTom route is used as-is.
+     */
+    private suspend fun snapAll(routes: List<Route>, mode: Mode): List<Route> = kotlinx.coroutines.coroutineScope {
+        routes.map { r ->
+            async {
+                val m = try { Valhalla.trace(r.points, mode) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { null }
+                if (m == null || m.points.size < 2) r
+                else Route(m.points, m.maneuvers, r.distanceM, r.durationS, m.via ?: r.via, r.trafficDelayS)
+            }
+        }.awaitAll()
     }
 
     /**

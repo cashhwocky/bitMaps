@@ -126,6 +126,16 @@ fun BitMapsApp(vm: AppViewModel, controller: MapController, onExit: () -> Unit) 
             }
         }
     }
+    // Like Google Maps: after you look around during navigation, snap back to your car on its own.
+    LaunchedEffect(vm.following, vm.screen) {
+        if (vm.screen != Screen.NAV || vm.following) return@LaunchedEffect
+        var idle = 0L
+        while (true) {
+            kotlinx.coroutines.delay(1000)
+            idle = if (controller.msSinceGesture() < 1000) 0L else idle + 1000
+            if (idle >= 10_000) { vm.recenter(); break }
+        }
+    }
     LaunchedEffect(vm.cameraTick) {
         controller.onTrackingDismissed = { vm.following = false }
         controller.whenReady {
