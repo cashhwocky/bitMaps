@@ -47,6 +47,7 @@ jobs:
       - name: Build
         env:
           BITMAPS_KEYSTORE_PASSWORD: ${{ secrets.BITMAPS_KEYSTORE_PASSWORD }}
+          TOMTOM_KEY: ${{ secrets.TOMTOM_KEY }}
           BITMAPS_KEY_ALIAS: ${{ secrets.BITMAPS_KEY_ALIAS }}
           BITMAPS_KEY_PASSWORD: ${{ secrets.BITMAPS_KEY_PASSWORD }}
         run: |

@@ -161,6 +161,8 @@ fun SettingsScreen(vm: AppViewModel) {
                     "bitMaps uses free community servers. You can point it at your own (Valhalla for routes, Photon for search) at any time.",
                     color = C.Dim, fontSize = 13.sp, modifier = Modifier.padding(vertical = 6.dp),
                 )
+                Toggle("🚦", "Live traffic", "Uses TomTom traffic for routes and arrival times", s.liveTraffic) { s.liveTraffic = it }
+                ServerField("🔑 Your TomTom key (optional)", s.tomtomKey) { s.tomtomKey = it }
                 ServerField("🛣️ Routing (Valhalla)", s.routingServer) { s.routingServer = it }
                 ServerField("🔎 Search (Photon)", s.searchServer) { s.searchServer = it }
                 Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.End) {

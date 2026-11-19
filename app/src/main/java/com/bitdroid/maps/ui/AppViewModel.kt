@@ -19,6 +19,7 @@ import com.bitdroid.maps.data.Recents
 import com.bitdroid.maps.data.Route
 import com.bitdroid.maps.data.Settings
 import com.bitdroid.maps.data.Updater
+import com.bitdroid.maps.data.Router
 import com.bitdroid.maps.data.Valhalla
 import com.bitdroid.maps.nav.LocationTracker
 import com.bitdroid.maps.nav.Music
@@ -121,7 +122,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         homeEtaAt = now
         if (Geo.distance(me, h.pos) < 60) { homeMinutes = 0; return }
         viewModelScope.launch {
-            runCatching { Valhalla.route(me, h.pos, Mode.DRIVE, settings.avoid).first() }.getOrNull()?.let {
+            runCatching { Router.route(me, h.pos, Mode.DRIVE, settings.avoid, null, trafficKey()).first() }.getOrNull()?.let {
                 homeMinutes = Math.round(it.durationS / 60.0).toInt().coerceAtLeast(1)
             }
         }
@@ -364,7 +365,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             routing = true
             routeError = null
             try {
-                routes = Valhalla.route(from, dest.pos, mode, settings.avoid, movingHeading())
+                routes = Router.route(from, dest.pos, mode, settings.avoid, movingHeading(), trafficKey())
                 selected = 0
                 cameraTick++
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -437,7 +438,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 val heading = movingHeading()
-                val r = Valhalla.route(LatLon(loc.latitude, loc.longitude), dest.pos, mode, settings.avoid, heading).first()
+                val r = Router.route(LatLon(loc.latitude, loc.longitude), dest.pos, mode, settings.avoid, heading, trafficKey()).first()
                 if (screen == Screen.NAV) {
                     navigator = Navigator(r)
                     routes = listOf(r)
@@ -502,6 +503,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             lat != 0.0 || lon != 0.0 -> dropPin(lat, lon)
         }
     }
+
+    /** TomTom key for live traffic: yours from Settings, else the one built into the app. */
+    fun trafficKey(): String? = if (!settings.liveTraffic) null
+        else settings.tomtomKey.trim().ifBlank { com.bitdroid.maps.BuildConfig.TOMTOM_KEY }.ifBlank { null }
 
     /** The direction you're driving, so routes start on the right side of the road (never a U-turn on a highway). */
     private fun movingHeading(): Float? {

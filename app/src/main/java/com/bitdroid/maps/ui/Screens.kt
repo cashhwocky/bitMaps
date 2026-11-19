@@ -595,7 +595,15 @@ private fun BoxScope.RouteScreen(vm: AppViewModel) {
                                 color = C.Dim, fontSize = 14.sp, maxLines = 2,
                             )
                         }
-                        if (vm.routes.size > 1 && vm.selected == 0) Pill("⚡ Fastest", C.Lilac, C.Violet.copy(alpha = 0.18f))
+                        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (vm.routes.size > 1 && vm.selected == 0) Pill("⚡ Fastest", C.Lilac, C.Violet.copy(alpha = 0.18f))
+                            // Live traffic (TomTom). Valhalla routes have no traffic data, so nothing shows.
+                            r.trafficDelayS?.let { d ->
+                                val min = Math.round(d / 60.0).toInt()
+                                if (min >= 1) Pill("🚦 +$min min traffic", Color(0xFF3B1D00), Color(0xFFFFB86B))
+                                else Pill("🟢 Light traffic", Color(0xFF0C3B22), Color(0xFF8FE3B0))
+                            }
+                        }
                     }
                     vm.routes.forEachIndexed { i, alt ->
                         if (i == vm.selected) return@forEachIndexed

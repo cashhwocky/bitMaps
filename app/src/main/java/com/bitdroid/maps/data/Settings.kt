@@ -57,6 +57,9 @@ class Settings(context: Context) {
     // Servers (self-hostable, so bitMaps never has to rely on anyone else)
     var routingServer by text("routing_server", Servers.VALHALLA)
     var searchServer by text("search_server", Servers.PHOTON)
+    /** Optional personal TomTom key for live traffic (overrides the built-in one). */
+    var tomtomKey by text("tomtom_key", "")
+    var liveTraffic by bool("live_traffic", true)
 
     init {
         applyUnits()

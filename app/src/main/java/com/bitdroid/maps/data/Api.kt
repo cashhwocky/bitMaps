@@ -280,3 +280,119 @@ object Nominatim {
         return out
     }
 }
+
+/**
+ * Live-traffic routing with TomTom (free tier: no credit card; over the daily limit it just answers
+ * 429 and bitMaps falls back to Valhalla). Returns routes with turn-by-turn instructions and the
+ * traffic delay already included in the time.
+ */
+object TomTom {
+    suspend fun route(from: LatLon, to: LatLon, mode: Mode, key: String, avoid: Avoid, heading: Float?): List<Route> {
+        val travel = when (mode) { Mode.DRIVE -> "car"; Mode.BIKE -> "bicycle"; Mode.WALK -> "pedestrian" }
+        val lang = Locale.getDefault().toLanguageTag()
+        val sb = StringBuilder("https://api.tomtom.com/routing/1/calculateRoute/")
+        sb.append("${from.lat},${from.lon}:${to.lat},${to.lon}/json?key=${Http.enc(key)}")
+        sb.append("&travelMode=$travel&routeType=fastest&traffic=true&instructionsType=text")
+        sb.append("&language=${Http.enc(lang)}&maxAlternatives=2&computeTravelTimeFor=all")
+        if (heading != null && mode == Mode.DRIVE) sb.append("&vehicleHeading=${heading.toInt()}")
+        if (mode != Mode.WALK) {
+            if (avoid.highways) sb.append("&avoid=motorways")
+            if (avoid.tolls) sb.append("&avoid=tollRoads")
+            if (avoid.ferries) sb.append("&avoid=ferries")
+        }
+        val json = JSONObject(Http.get(sb.toString()))
+        val routes = json.optJSONArray("routes") ?: throw IOException("No route found")
+        val out = ArrayList<Route>()
+        for (i in 0 until routes.length()) out.add(parse(routes.getJSONObject(i)))
+        if (out.isEmpty()) throw IOException("No route found")
+        return out
+    }
+
+    private fun parse(r: JSONObject): Route {
+        val points = ArrayList<LatLon>()
+        val legs = r.optJSONArray("legs") ?: JSONArray()
+        for (l in 0 until legs.length()) {
+            val pts = legs.getJSONObject(l).optJSONArray("points") ?: continue
+            for (p in 0 until pts.length()) {
+                val o = pts.getJSONObject(p)
+                points.add(LatLon(o.getDouble("latitude"), o.getDouble("longitude")))
+            }
+        }
+        val summary = r.optJSONObject("summary") ?: JSONObject()
+        val total = summary.optDouble("lengthInMeters", 0.0)
+        val ins = r.optJSONObject("guidance")?.optJSONArray("instructions") ?: JSONArray()
+        val maneuvers = ArrayList<Maneuver>()
+        for (i in 0 until ins.length()) {
+            val o = ins.getJSONObject(i)
+            val next = if (i + 1 < ins.length()) ins.getJSONObject(i + 1) else null
+            val offset = o.optDouble("routeOffsetInMeters", 0.0)
+            val nextOffset = next?.optDouble("routeOffsetInMeters", total) ?: total
+            val msg = o.optString("message").ifBlank { o.optString("street") }
+            maneuvers.add(
+                Maneuver(
+                    type = typeOf(o.optString("maneuver")),
+                    instruction = msg,
+                    alert = msg,
+                    pre = msg,
+                    post = null,
+                    street = o.optString("street").ifBlank { null },
+                    beginIndex = o.optInt("pointIndex", 0).coerceIn(0, (points.size - 1).coerceAtLeast(0)),
+                    lengthM = (nextOffset - offset).coerceAtLeast(0.0),
+                    timeS = 0.0,
+                ),
+            )
+        }
+        if (maneuvers.isEmpty() || !maneuvers.last().isArrival) {
+            maneuvers.add(Maneuver(4, "You have arrived", null, "You have arrived.", null, null, (points.size - 1).coerceAtLeast(0), 0.0, 0.0))
+        }
+        val via = maneuvers.filter { it.street != null }.maxByOrNull { it.lengthM }?.street
+        return Route(
+            points = points,
+            maneuvers = maneuvers,
+            distanceM = total,
+            durationS = summary.optDouble("travelTimeInSeconds", 0.0),
+            via = via,
+            trafficDelayS = summary.optDouble("trafficDelayInSeconds", 0.0),
+        )
+    }
+
+    /** TomTom maneuver names → the turn types the rest of bitMaps uses (Valhalla numbering). */
+    private fun typeOf(m: String): Int = when (m) {
+        "DEPART" -> 1
+        "ARRIVE" -> 4
+        "ARRIVE_RIGHT" -> 5
+        "ARRIVE_LEFT" -> 6
+        "STRAIGHT", "FOLLOW", "SWITCH_MAIN_ROAD", "SWITCH_PARALLEL_ROAD" -> 8
+        "BEAR_RIGHT" -> 9
+        "TURN_RIGHT" -> 10
+        "SHARP_RIGHT" -> 11
+        "MAKE_UTURN", "TRY_MAKE_UTURN" -> 13
+        "SHARP_LEFT" -> 14
+        "TURN_LEFT" -> 15
+        "BEAR_LEFT" -> 16
+        "KEEP_RIGHT" -> 23
+        "KEEP_LEFT" -> 24
+        "TAKE_EXIT", "MOTORWAY_EXIT_RIGHT" -> 20
+        "MOTORWAY_EXIT_LEFT" -> 21
+        "ENTER_MOTORWAY", "ENTER_FREEWAY", "ENTER_HIGHWAY", "ENTRANCE_RAMP" -> 25
+        "ROUNDABOUT_CROSS", "ROUNDABOUT_RIGHT", "ROUNDABOUT_LEFT", "ROUNDABOUT_BACK" -> 26
+        "TAKE_FERRY" -> 28
+        else -> 8
+    }
+}
+
+/** Picks live-traffic TomTom when a key is set, otherwise (or if TomTom fails) the free Valhalla server. */
+object Router {
+    suspend fun route(from: LatLon, to: LatLon, mode: Mode, avoid: Avoid, heading: Float?, tomtomKey: String?): List<Route> {
+        if (!tomtomKey.isNullOrBlank()) {
+            try {
+                return TomTom.route(from, to, mode, tomtomKey, avoid, heading)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Over the free limit (429), offline, or no TomTom route: fall back to Valhalla.
+            }
+        }
+        return Valhalla.route(from, to, mode, avoid, heading)
+    }
+}

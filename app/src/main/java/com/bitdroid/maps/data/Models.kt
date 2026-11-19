@@ -50,6 +50,8 @@ class Route(
     val distanceM: Double,
     val durationS: Double,
     val via: String?,
+    /** Extra time from live traffic (TomTom), or null when the route has no traffic data. */
+    val trafficDelayS: Double? = null,
 ) {
     /** Distance along the route at each shape point, in meters. */
     val cumulative: DoubleArray = DoubleArray(points.size).also { c ->

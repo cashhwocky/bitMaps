@@ -18,8 +18,11 @@ android {
         applicationId = "com.bitdroid.maps"
         minSdk = 31
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.4.0"
+        versionCode = 9
+        versionName = "0.4.1"
+
+        // Live traffic: a free TomTom key from the TOMTOM_KEY repo secret (empty = no traffic, Valhalla only).
+        buildConfigField("String", "TOMTOM_KEY", "\"${System.getenv("TOMTOM_KEY") ?: ""}\"")
 
         // Pixels are arm64 only; keeping one ABI keeps the APK (map engine) small.
         ndk { abiFilters += listOf("arm64-v8a") }
@@ -61,7 +64,7 @@ android {
 
     buildFeatures {
         compose = true
-        buildConfig = false
+        buildConfig = true
     }
 }
 
