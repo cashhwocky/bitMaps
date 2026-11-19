@@ -71,9 +71,9 @@ object Photon {
         osmTag: String? = null,
         nearbyOnly: Boolean = false,
     ): List<Place> {
-        val sb = StringBuilder("${Servers.photon.trimEnd('/')}/api/?q=${Http.enc(query)}&limit=12")
+        val sb = StringBuilder("${Servers.photon.trimEnd('/')}/api/?q=${Http.enc(query)}&limit=20")
         if (near != null) {
-            sb.append("&lat=${near.lat}&lon=${near.lon}")
+            sb.append("&lat=${near.lat}&lon=${near.lon}&zoom=12&location_bias_scale=0.3")
             if (nearbyOnly) {
                 val d = 0.12
                 sb.append(String.format(Locale.US, "&bbox=%.5f,%.5f,%.5f,%.5f", near.lon - d, near.lat - d, near.lon + d, near.lat + d))

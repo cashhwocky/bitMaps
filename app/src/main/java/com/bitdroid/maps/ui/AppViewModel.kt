@@ -14,6 +14,8 @@ import com.bitdroid.maps.data.Geo
 import com.bitdroid.maps.data.LatLon
 import com.bitdroid.maps.data.Mode
 import com.bitdroid.maps.data.Photon
+import com.bitdroid.maps.data.Search
+import com.bitdroid.maps.data.TomTomSearch
 import com.bitdroid.maps.data.Place
 import com.bitdroid.maps.data.Recents
 import com.bitdroid.maps.data.Route
@@ -266,15 +268,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (q.isBlank()) { results = emptyList(); searching = false; searchError = null; return }
         searchJob = viewModelScope.launch {
             delay(300)
+            val me = here()
+            val key = searchKey()
+            Search.intent(q)?.let { intent ->
+                // "gas", "coffee near me"…: every one around you, closest first.
+                if (me != null) { runSearch { Search.nearby(intent, me, key, q) }; return@launch }
+            }
+            if (!Census.looksLikeAddress(q)) {
+                runSearch(keepOrder = true) { Search.text(q, me, key) { quick -> if (quick.isNotEmpty()) results = quick } }
+                return@launch
+            }
             runSearch {
-                if (!Census.looksLikeAddress(q)) return@runSearch Photon.search(q, here())
                 // Addresses: ask OpenStreetMap, the US Census and Nominatim together; exact house matches go first.
                 coroutineScope {
                     val osm = async { runCatching { Photon.search(q, here()) }.getOrDefault(emptyList()) }
+                    val tt = async { key?.let { k -> runCatching { TomTomSearch.search(q, here(), k, limit = 10, radiusM = null) }.getOrNull() } ?: emptyList() }
                     val census = async { delay(250); Census.search(q, hereName) }
                     val nom = async { delay(400); runCatching { Nominatim.address(q, here()) }.getOrDefault(emptyList()) }
                     val exact = ArrayList<Place>()
-                    for (p in census.await() + nom.await().filter { it.kind == "house" }) {
+                    for (p in tt.await().filter { it.kind == "house" } + census.await() + nom.await().filter { it.kind == "house" }) {
                         if (exact.none { Geo.distance(it.pos, p.pos) < 40 }) exact.add(p)
                     }
                     exact + osm.await().filter { p -> exact.none { Geo.distance(it.pos, p.pos) < 30 } }
@@ -287,7 +299,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         screen = Screen.SEARCH
         query = c.label
         searchJob?.cancel()
-        searchJob = viewModelScope.launch { runSearch { Photon.search(c.query, here(), osmTag = c.tag, nearbyOnly = here() != null) } }
+        searchJob = viewModelScope.launch {
+            val me = here()
+            val intent = Search.intent(c.label)
+            runSearch {
+                if (me != null && intent != null) Search.nearby(intent, me, searchKey(), c.query)
+                else Photon.search(c.query, me, osmTag = c.tag, nearbyOnly = me != null)
+            }
+        }
     }
 
     private suspend fun runSearch(keepOrder: Boolean = false, block: suspend () -> List<Place>) {
@@ -505,6 +524,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** TomTom key for live traffic: yours from Settings, else the one built into the app. */
+    /** TomTom key for place search (works even if live traffic is switched off). */
+    fun searchKey(): String? = settings.tomtomKey.trim().ifBlank { com.bitdroid.maps.BuildConfig.TOMTOM_KEY }.ifBlank { null }
+
     fun trafficKey(): String? = if (!settings.liveTraffic) null
         else settings.tomtomKey.trim().ifBlank { com.bitdroid.maps.BuildConfig.TOMTOM_KEY }.ifBlank { null }
 
