@@ -18,8 +18,8 @@ android {
         applicationId = "com.bitdroid.maps"
         minSdk = 31
         targetSdk = 35
-        versionCode = 15
-        versionName = "0.5.3"
+        versionCode = 16
+        versionName = "0.6.0"
 
         // Live traffic: a free TomTom key from the TOMTOM_KEY repo secret (empty = no traffic, Valhalla only).
         buildConfigField("String", "TOMTOM_KEY", "\"${System.getenv("TOMTOM_KEY") ?: ""}\"")
@@ -88,6 +88,7 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
+    implementation("dev.chrisbanes.haze:haze:1.6.7")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 

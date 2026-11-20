@@ -176,10 +176,10 @@ object Valhalla {
     suspend fun trace(points: List<LatLon>, mode: Mode): Route {
         val units = if (Units.imperial) "miles" else "kilometers"
         val lang = Locale.getDefault().toLanguageTag()
-        // Thin the shape so long trips stay small (about 1,500 points max, never closer than 25 m).
+        // Keep the shape dense (a point every ~15 m, up to ~8,000 points) so the match never cuts corners.
         var total = 0.0
         for (i in 1 until points.size) total += Geo.distance(points[i - 1], points[i])
-        val step = maxOf(25.0, total / 1500.0)
+        val step = maxOf(15.0, total / 8000.0)
         val shape = JSONArray()
         var acc = 0.0
         shape.put(JSONObject().put("lat", points.first().lat).put("lon", points.first().lon))
@@ -195,6 +195,8 @@ object Valhalla {
             .put("shape", shape)
             .put("costing", mode.costing)
             .put("shape_match", "map_snap")
+            // TomTom's roads can sit 10–30 m from OpenStreetMap's: look wider so the match doesn't fail.
+            .put("trace_options", JSONObject().put("search_radius", 40).put("gps_accuracy", 20).put("turn_penalty_factor", 200))
             .put("units", units)
             .put("language", lang)
             .put("directions_options", JSONObject().put("units", units).put("language", lang))
@@ -352,7 +354,7 @@ object TomTom {
             val routes = json.optJSONArray("routes") ?: throw IOException("No route found")
             val out = ArrayList<Route>()
             for (i in 0 until routes.length()) out.add(parse(routes.getJSONObject(i)))
-            if (out.isNotEmpty() && out.first().points.size > 1) return snapAll(out, mode)
+            if (out.isNotEmpty() && out.first().points.size > 1) return snapAll(out, mode, from, to, avoid, heading)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (_: Exception) {
@@ -366,14 +368,28 @@ object TomTom {
      * sit beside the road. Match each route onto the drawn roads (and their names/turns) with Valhalla,
      * keeping TomTom's traffic-aware time. If matching fails, the TomTom route is used as-is.
      */
-    private suspend fun snapAll(routes: List<Route>, mode: Mode): List<Route> = kotlinx.coroutines.coroutineScope {
-        routes.map { r ->
+    private suspend fun snapAll(routes: List<Route>, mode: Mode, from: LatLon, to: LatLon, avoid: Avoid, heading: Float?): List<Route> = kotlinx.coroutines.coroutineScope {
+        val osm = async { try { Valhalla.route(from, to, mode, avoid, heading) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { emptyList() } }
+        val snapped = routes.map { r ->
             async {
                 val m = try { Valhalla.trace(r.points, mode) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { null }
-                if (m == null || m.points.size < 2) r
+                // A good match covers about the same distance as TomTom's route; otherwise it's unusable.
+                if (m == null || m.points.size < 2 || kotlin.math.abs(m.distanceM - r.distanceM) > r.distanceM * 0.08) null
                 else Route(m.points, m.maneuvers, r.distanceM, r.durationS, m.via ?: r.via, r.trafficDelayS)
             }
         }.awaitAll()
+        val plain = osm.await()
+        val out = snapped.mapIndexedNotNull { i, m ->
+            m ?: run {
+                // Never draw TomTom's own line (it can sit beside the road): use the closest OpenStreetMap
+                // route of similar length, still with TomTom's traffic time.
+                val r = routes[i]
+                plain.minByOrNull { kotlin.math.abs(it.distanceM - r.distanceM) }
+                    ?.takeIf { kotlin.math.abs(it.distanceM - r.distanceM) < r.distanceM * 0.1 }
+                    ?.let { v -> Route(v.points, v.maneuvers, r.distanceM, r.durationS, v.via ?: r.via, r.trafficDelayS) }
+            }
+        }.distinctBy { it.points.size to it.distanceM }
+        out.ifEmpty { plain.ifEmpty { routes } }
     }
 
     /**
@@ -401,7 +417,9 @@ object TomTom {
             val sum = r.optJSONObject("summary") ?: JSONObject()
             val time = sum.optDouble("travelTimeInSeconds", sum.optDouble("travelDurationInSeconds", 0.0))
             val delay = sum.optDouble("trafficDelayInSeconds", sum.optDouble("trafficDelayDurationInSeconds", 0.0))
-            val matched = runCatching { Valhalla.trace(pts, mode) }.getOrNull() ?: continue
+            val len = sum.optDouble("lengthInMeters", 0.0)
+            val matched = runCatching { Valhalla.trace(pts, mode) }.getOrNull()
+                ?.takeIf { len <= 0 || kotlin.math.abs(it.distanceM - len) < len * 0.08 } ?: continue
             out.add(
                 Route(
                     points = matched.points,

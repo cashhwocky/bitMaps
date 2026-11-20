@@ -1,5 +1,7 @@
 package com.bitdroid.maps.ui
 
+import dev.chrisbanes.haze.hazeSource
+
 import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -161,14 +163,16 @@ fun BitMapsApp(vm: AppViewModel, controller: MapController, onExit: () -> Unit) 
             .background(androidx.compose.ui.graphics.Brush.radialGradient(listOf(C.glowA, Color.Transparent), center = androidx.compose.ui.geometry.Offset(0f, 0f), radius = 1400f))
             .background(androidx.compose.ui.graphics.Brush.radialGradient(listOf(C.glowB, Color.Transparent), center = androidx.compose.ui.geometry.Offset(1400f, 3000f), radius = 1600f)),
     ) {
-        MapSurface(controller, onLongPress = vm::dropPin, modifier = mapModifier)
+        val haze = remember { dev.chrisbanes.haze.HazeState() }
+        // The map is the glass source: every bar and button blurs it (bitDialer's tinted liquid glass).
+        MapSurface(controller, onLongPress = vm::dropPin, modifier = mapModifier.then(Modifier.hazeSource(haze)))
         when (vm.screen) {
             Screen.SETUP -> SetupScreen(vm)
-            Screen.EXPLORE -> if (vm.settings.appStyle == com.bitdroid.maps.data.AppStyle.MATERIAL_YOU) Explore(vm) else ExploreMaps(vm)
+            Screen.EXPLORE -> if (vm.settings.appStyle == com.bitdroid.maps.data.AppStyle.MATERIAL_YOU) Explore(vm) else ExploreMaps(vm, haze)
             Screen.SEARCH -> SearchScreen(vm)
             Screen.PLACE -> PlaceScreen(vm)
             Screen.ROUTE -> RouteScreen(vm)
-            Screen.NAV -> if (vm.settings.appStyle == com.bitdroid.maps.data.AppStyle.MATERIAL_YOU) NavScreen(vm) else NavMaps(vm)
+            Screen.NAV -> if (vm.settings.appStyle == com.bitdroid.maps.data.AppStyle.MATERIAL_YOU) NavScreen(vm) else NavMaps(vm, haze)
             Screen.SETTINGS -> SettingsScreen(vm)
             Screen.VOICE -> VoiceScreen(vm)
         }

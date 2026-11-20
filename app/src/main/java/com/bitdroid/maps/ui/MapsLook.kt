@@ -24,6 +24,9 @@ import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Directions
+import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.Pause
@@ -44,6 +47,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -51,6 +57,7 @@ import androidx.compose.ui.unit.sp
 import com.bitdroid.maps.data.Geo
 import com.bitdroid.maps.data.Place
 import com.bitdroid.maps.data.Units
+import dev.chrisbanes.haze.HazeState
 import java.text.DateFormat
 import java.util.Date
 
@@ -73,29 +80,27 @@ private fun Fab(label: String, size: Int = 52, bg: Color = C.Sheet, onClick: () 
 }
 
 @Composable
-fun BoxScope.ExploreMaps(vm: AppViewModel) {
+fun BoxScope.ExploreMaps(vm: AppViewModel, haze: HazeState) {
     val context = LocalContext.current
     val voice = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { r ->
         r.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let(vm::voiceQuery)
     }
 
-    // ---- search card + chips ----
+    // ---- glass search card + chips ----
     Column(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 8.dp).fillMaxWidth()) {
         Row(
             Modifier
                 .padding(horizontal = 12.dp)
                 .fillMaxWidth()
-                .height(54.dp)
-                .shadow(6.dp, RoundedCornerShape(27.dp))
-                .clip(RoundedCornerShape(27.dp))
-                .background(C.Sheet)
-                .clickable(onClickLabel = "Search") { vm.openSearch() }
-                .padding(start = 16.dp, end = 8.dp),
+                .height(56.dp)
+                .squish { vm.openSearch() }
+                .frosted(haze, CircleShape)
+                .padding(start = 18.dp, end = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Icon(Icons.Rounded.Place, null, tint = C.Accent, modifier = Modifier.size(24.dp))
-            Text("Search here", color = C.Dim, fontSize = 16.sp, modifier = Modifier.weight(1f))
+            Icon(Icons.Rounded.Place, null, tint = GlassSelected, modifier = Modifier.size(24.dp))
+            Text("Search here", color = Color(0xFFD0D0D8), fontSize = 16.sp, modifier = Modifier.weight(1f))
             Box(
                 Modifier.size(40.dp).clip(CircleShape).clickable(role = Role.Button, onClickLabel = "Search by voice") {
                     val i = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
@@ -105,101 +110,87 @@ fun BoxScope.ExploreMaps(vm: AppViewModel) {
                     }
                 },
                 contentAlignment = Alignment.Center,
-            ) { Icon(Icons.Rounded.Mic, "Search by voice", tint = C.Text, modifier = Modifier.size(22.dp)) }
-            Box(
-                Modifier.size(38.dp).clip(CircleShape).background(C.AccentDeep).clickable(role = Role.Button, onClickLabel = "Settings") { vm.openSettings() },
-                contentAlignment = Alignment.Center,
-            ) { Icon(Icons.Rounded.Settings, "Settings", tint = C.OnAccentDeep, modifier = Modifier.size(20.dp)) }
+            ) { Icon(Icons.Rounded.Mic, "Search by voice", tint = Color.White, modifier = Modifier.size(22.dp)) }
         }
         Row(
             Modifier.padding(top = 10.dp).horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Chip("🏠", "Home") { if (vm.home != null) vm.goHome() else vm.openSearch() }
-            categories.forEach { c -> Chip(placeEmoji(c.query).first, c.label) { vm.searchCategory(c) } }
+            Chip(haze, "🏠", vm.homeMinutes?.let { if (it == 0) "Home" else "Home · $it min" } ?: "Home") { if (vm.home != null) vm.goHome() else vm.openSearch() }
+            categories.forEach { c -> Chip(haze, placeEmoji(c.query).first, c.label) { vm.searchCategory(c) } }
         }
     }
 
-    // ---- bottom sheet + buttons above it ----
+    // ---- glass buttons, music, and bitDialer's dock ----
     Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
         Column(
-            Modifier.align(Alignment.End).padding(end = 14.dp, bottom = 14.dp),
+            Modifier.align(Alignment.End).padding(end = 16.dp, bottom = 12.dp),
             horizontalAlignment = Alignment.End,
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Fab("Center on my location", onClick = { vm.recenter() }) {
-                Icon(Icons.Rounded.MyLocation, "Center on my location", tint = C.Accent, modifier = Modifier.size(24.dp))
+            GlassFab(haze, "Center on my location", onClick = { vm.recenter() }) {
+                Icon(Icons.Rounded.MyLocation, null, tint = GlassSelected, modifier = Modifier.size(24.dp))
             }
+            // Directions: violet-tinted glass.
             Box(
                 Modifier
                     .size(58.dp)
-                    .shadow(6.dp, RoundedCornerShape(18.dp))
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(C.Accent)
-                    .clickable(role = Role.Button, onClickLabel = "Directions") { if (vm.home != null) vm.goHome() else vm.openSearch() },
+                    .squish { if (vm.home != null) vm.goHome() else vm.openSearch() }
+                    .frosted(haze, RoundedCornerShape(20.dp), tint = C.Accent, alpha = 0.6f),
                 contentAlignment = Alignment.Center,
-            ) { Icon(Icons.Rounded.Directions, "Directions", tint = C.OnAccent, modifier = Modifier.size(28.dp)) }
+            ) { Icon(Icons.Rounded.Directions, "Directions", tint = Color.White, modifier = Modifier.size(28.dp)) }
+        }
+        vm.update?.let { u ->
+            Row(
+                Modifier.padding(horizontal = 16.dp).padding(bottom = 10.dp).fillMaxWidth().height(48.dp)
+                    .squish { vm.showUpdate = true }
+                    .frosted(haze, CircleShape, tint = C.Accent, alpha = 0.45f)
+                    .padding(horizontal = 18.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("🎉 bitMaps ${u.version} is here", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                Text("Update", color = GlassSelected, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            }
         }
         if (vm.settings.musicOnMap) {
             val now by vm.music.now.collectAsState()
-            now?.let { MusicBar(vm, it, Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) }
+            now?.let { MusicBar(vm, it, Modifier.padding(horizontal = 16.dp).padding(bottom = 10.dp), haze) }
         }
-        val shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .shadow(12.dp, shape)
-                .clip(shape)
-                .background(C.Sheet)
-                .navigationBarsPadding()
-                .padding(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 12.dp),
-        ) {
-            Box(Modifier.align(Alignment.CenterHorizontally).size(width = 36.dp, height = 4.dp).clip(CircleShape).background(C.SurfaceHigh))
-            Spacer(Modifier.height(12.dp))
-            vm.update?.let { u ->
-                Row(
-                    Modifier.fillMaxWidth().padding(bottom = 10.dp).clip(RoundedCornerShape(14.dp)).background(C.AccentDeep)
-                        .clickable(role = Role.Button) { vm.showUpdate = true }.padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("🎉 bitMaps ${u.version} is here", color = C.OnAccentDeep, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                    Text("Update", color = C.Accent, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        GlassDock(
+            haze = haze,
+            tabs = listOf(
+                TabItem(Icons.Rounded.Explore, "Explore"),
+                TabItem(Icons.Rounded.Home, "Home"),
+                TabItem(Icons.Rounded.History, "Recents"),
+                TabItem(Icons.Rounded.Settings, "Settings"),
+            ),
+            selected = 0,
+            onSelect = { i ->
+                when (i) {
+                    1 -> if (vm.home != null) vm.goHome() else vm.openSearch()
+                    2 -> vm.openSearch()
+                    3 -> vm.openSettings()
                 }
-            }
-            Text("Recent", fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 4.dp))
-            val h = vm.home
-            if (h != null) {
-                SheetRow("🏠", C.AccentDeep, "Home", listOfNotNull(h.name, vm.homeMinutes?.let { if (it == 0) "You're here" else "$it min" }).joinToString(" · ")) { vm.goHome() }
-            }
-            val list = vm.recents.filter { h == null || !vm.isHome(it) }.take(if (h != null) 2 else 3)
-            if (list.isEmpty() && h == null) {
-                Text(
-                    if (vm.location == null) "Finding your location…" else "Search for a place, or long-press the map to drop a pin.",
-                    color = C.Dim, fontSize = 14.sp, modifier = Modifier.padding(vertical = 12.dp),
-                )
-            }
-            list.forEach { p ->
-                SheetRow(placeEmoji(p.kind, p.name).first, C.Surface, p.name, listOfNotNull(p.category.ifBlank { null }, dist(vm, p)).joinToString(" · ")) { vm.open(p) }
-            }
-        }
+            },
+            onSearch = { vm.openSearch() },
+        )
     }
 }
 
 @Composable
-private fun Chip(emoji: String, label: String, onClick: () -> Unit) {
+private fun Chip(haze: HazeState, emoji: String, label: String, onClick: () -> Unit) {
     Row(
         Modifier
-            .height(36.dp)
-            .shadow(3.dp, RoundedCornerShape(18.dp))
-            .clip(RoundedCornerShape(18.dp))
-            .background(C.Sheet)
-            .clickable(role = Role.Button, onClickLabel = label, onClick = onClick)
-            .padding(start = 10.dp, end = 14.dp),
+            .height(38.dp)
+            .squish(onClick = onClick)
+            .frosted(haze, CircleShape)
+            .semantics { contentDescription = label; role = Role.Button }
+            .padding(start = 12.dp, end = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Text(emoji, fontSize = 15.sp)
-        Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White, maxLines = 1)
     }
 }
 
@@ -224,7 +215,7 @@ private val BannerColor = Color(0xFF3E2F78)
 private val BannerStrip = Color(0xFF2F2360)
 
 @Composable
-fun BoxScope.NavMaps(vm: AppViewModel) {
+fun BoxScope.NavMaps(vm: AppViewModel, haze: HazeState) {
     val p = vm.progress
     val now by vm.music.now.collectAsState()
 
@@ -233,7 +224,8 @@ fun BoxScope.NavMaps(vm: AppViewModel) {
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         // ---- turn banner ----
-        Column(Modifier.fillMaxWidth().shadow(8.dp, RoundedCornerShape(18.dp)).clip(RoundedCornerShape(18.dp)).background(BannerColor)) {
+        // Violet-tinted glass turn banner.
+        Column(Modifier.fillMaxWidth().frosted(haze, RoundedCornerShape(24.dp), tint = BannerColor, alpha = 0.78f)) {
             Row(
                 Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -263,7 +255,7 @@ fun BoxScope.NavMaps(vm: AppViewModel) {
             }
             p?.next?.takeIf { !p.arrived && !p.maneuver.isArrival }?.let { n ->
                 Row(
-                    Modifier.fillMaxWidth().background(BannerStrip).padding(horizontal = 18.dp, vertical = 10.dp),
+                    Modifier.fillMaxWidth().background(BannerStrip.copy(alpha = 0.45f)).padding(horizontal = 18.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
@@ -277,7 +269,7 @@ fun BoxScope.NavMaps(vm: AppViewModel) {
         val np = now
         if (vm.settings.musicInNav && np != null) {
             Row(
-                Modifier.shadow(6.dp, RoundedCornerShape(28.dp)).clip(RoundedCornerShape(28.dp)).background(C.Sheet).padding(6.dp),
+                Modifier.frosted(haze, RoundedCornerShape(28.dp)).padding(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
@@ -309,13 +301,13 @@ fun BoxScope.NavMaps(vm: AppViewModel) {
         Modifier.align(Alignment.CenterEnd).padding(end = 12.dp, top = 120.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Fab(if (vm.muted) "Unmute voice" else "Mute voice", size = 48, onClick = { vm.toggleMute() }) {
-            Icon(if (vm.muted) Icons.AutoMirrored.Rounded.VolumeOff else Icons.AutoMirrored.Rounded.VolumeUp, null, tint = C.Text, modifier = Modifier.size(22.dp))
+        GlassFab(haze, if (vm.muted) "Unmute voice" else "Mute voice", size = 50, onClick = { vm.toggleMute() }) {
+            Icon(if (vm.muted) Icons.AutoMirrored.Rounded.VolumeOff else Icons.AutoMirrored.Rounded.VolumeUp, null, tint = Color.White, modifier = Modifier.size(22.dp))
         }
         if (vm.following) {
-            Fab("Route overview", size = 48, onClick = { vm.overview() }) { Icon(Icons.Rounded.Route, null, tint = C.Text, modifier = Modifier.size(22.dp)) }
+            GlassFab(haze, "Route overview", size = 50, onClick = { vm.overview() }) { Icon(Icons.Rounded.Route, null, tint = Color.White, modifier = Modifier.size(22.dp)) }
         } else {
-            Fab("Recenter", size = 48, onClick = { vm.recenter() }) { Icon(Icons.Rounded.MyLocation, null, tint = C.Accent, modifier = Modifier.size(22.dp)) }
+            GlassFab(haze, "Recenter", size = 50, onClick = { vm.recenter() }) { Icon(Icons.Rounded.MyLocation, null, tint = GlassSelected, modifier = Modifier.size(22.dp)) }
         }
     }
 
@@ -332,23 +324,22 @@ fun BoxScope.NavMaps(vm: AppViewModel) {
                 }
             }
         }
-        val shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+        // Floating glass pill (same glass as the dock).
         Row(
             Modifier
-                .fillMaxWidth()
-                .shadow(12.dp, shape)
-                .clip(shape)
-                .background(C.Sheet)
                 .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 16.dp),
+                .padding(start = 16.dp, end = 16.dp, bottom = 12.dp)
+                .fillMaxWidth()
+                .frosted(haze, RoundedCornerShape(36.dp))
+                .padding(horizontal = 10.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Box(
-                Modifier.size(48.dp).clip(CircleShape).background(C.Surface)
-                    .clickable(role = Role.Button, onClickLabel = "End navigation") { vm.end() },
+                Modifier.size(52.dp).clip(CircleShape).background(Color(0xFFE5484D).copy(alpha = 0.85f))
+                    .squish { vm.end() },
                 contentAlignment = Alignment.Center,
-            ) { Icon(Icons.Rounded.Close, "End navigation", tint = C.Text, modifier = Modifier.size(26.dp)) }
+            ) { Icon(Icons.Rounded.Close, "End navigation", tint = Color.White, modifier = Modifier.size(26.dp)) }
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                 if (p != null) {
                     // Green when traffic is light, orange when it's adding time (like Google Maps).
@@ -361,7 +352,7 @@ fun BoxScope.NavMaps(vm: AppViewModel) {
                     Text(vm.place?.name ?: "", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-            Spacer(Modifier.size(48.dp))
+            Spacer(Modifier.size(52.dp))
         }
     }
 }

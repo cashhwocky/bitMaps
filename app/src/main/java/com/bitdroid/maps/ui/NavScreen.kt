@@ -251,10 +251,11 @@ private fun MediaButton(icon: ImageVector, label: String, onClick: () -> Unit, f
 
 /** Music bar floating over the map (Settings → Music → Show on map). */
 @Composable
-fun MusicBar(vm: AppViewModel, np: NowPlaying, modifier: Modifier = Modifier) {
+fun MusicBar(vm: AppViewModel, np: NowPlaying, modifier: Modifier = Modifier, haze: dev.chrisbanes.haze.HazeState? = null) {
     val pos = rememberPosition(np)
     val shape = RoundedCornerShape(24.dp)
-    Box(modifier.fillMaxWidth().shadow(14.dp, shape).clip(shape).background(C.Glass).border(1.dp, C.Outline, shape)) {
+    val surface = if (haze != null) Modifier.frosted(haze, shape) else Modifier.shadow(14.dp, shape).clip(shape).background(C.Glass).border(1.dp, C.Outline, shape)
+    Box(modifier.fillMaxWidth().then(surface)) {
         Row(
             Modifier.padding(start = 10.dp, end = 6.dp, top = 8.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
