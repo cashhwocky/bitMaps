@@ -92,7 +92,7 @@ class MapController(private val context: Context, private var pal: MapPalette, p
         m.uiSettings.isLogoEnabled = false
         m.uiSettings.isCompassEnabled = false
         m.uiSettings.attributionGravity = Gravity.BOTTOM or Gravity.START
-        m.uiSettings.setAttributionMargins(dp(12), 0, 0, dp(10))
+        m.uiSettings.setAttributionMargins(dp(12), 0, 0, dp(132)) // sits above the floating tab bar
         m.uiSettings.isAttributionEnabled = true
         ready = true
         pending.forEach { it() }

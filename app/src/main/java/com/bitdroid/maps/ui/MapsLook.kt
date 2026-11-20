@@ -24,6 +24,8 @@ import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Directions
+import androidx.compose.material.icons.rounded.Bookmark
+import androidx.compose.material.icons.rounded.DirectionsCar
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Home
@@ -39,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -82,6 +85,9 @@ private fun Fab(label: String, size: Int = 52, bg: Color = C.Sheet, onClick: () 
 @Composable
 fun BoxScope.ExploreMaps(vm: AppViewModel, haze: HazeState) {
     val context = LocalContext.current
+    var savedOpen by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+    val tab = when { vm.driveMode -> 2; savedOpen -> 1; else -> 0 }
+    androidx.activity.compose.BackHandler(savedOpen || vm.driveMode) { savedOpen = false; vm.stopDrive() }
     val voice = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { r ->
         r.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let(vm::voiceQuery)
     }
@@ -112,7 +118,7 @@ fun BoxScope.ExploreMaps(vm: AppViewModel, haze: HazeState) {
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.Rounded.Mic, "Search by voice", tint = Color.White, modifier = Modifier.size(22.dp)) }
         }
-        Row(
+        if (!vm.driveMode) Row(
             Modifier.padding(top = 10.dp).horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -123,7 +129,7 @@ fun BoxScope.ExploreMaps(vm: AppViewModel, haze: HazeState) {
 
     // ---- glass buttons, music, and bitDialer's dock ----
     Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
-        Column(
+        if (tab == 0) Column(
             Modifier.align(Alignment.End).padding(end = 16.dp, bottom = 12.dp),
             horizontalAlignment = Alignment.End,
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -140,7 +146,17 @@ fun BoxScope.ExploreMaps(vm: AppViewModel, haze: HazeState) {
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.Rounded.Directions, "Directions", tint = Color.White, modifier = Modifier.size(28.dp)) }
         }
-        vm.update?.let { u ->
+        androidx.compose.animation.AnimatedVisibility(
+            tab == 1,
+            enter = androidx.compose.animation.slideInVertically { it / 3 } + androidx.compose.animation.fadeIn(),
+            exit = androidx.compose.animation.slideOutVertically { it / 3 } + androidx.compose.animation.fadeOut(),
+        ) { SavedPanel(vm, haze) { savedOpen = false } }
+        androidx.compose.animation.AnimatedVisibility(
+            tab == 2,
+            enter = androidx.compose.animation.slideInVertically { it / 3 } + androidx.compose.animation.fadeIn(),
+            exit = androidx.compose.animation.slideOutVertically { it / 3 } + androidx.compose.animation.fadeOut(),
+        ) { DrivePanel(vm, haze) }
+        if (tab == 0) vm.update?.let { u ->
             Row(
                 Modifier.padding(horizontal = 16.dp).padding(bottom = 10.dp).fillMaxWidth().height(48.dp)
                     .squish { vm.showUpdate = true }
@@ -160,16 +176,17 @@ fun BoxScope.ExploreMaps(vm: AppViewModel, haze: HazeState) {
             haze = haze,
             tabs = listOf(
                 TabItem(Icons.Rounded.Explore, "Explore"),
-                TabItem(Icons.Rounded.Home, "Home"),
-                TabItem(Icons.Rounded.History, "Recents"),
+                TabItem(Icons.Rounded.Bookmark, "Saved"),
+                TabItem(Icons.Rounded.DirectionsCar, "Drive"),
                 TabItem(Icons.Rounded.Settings, "Settings"),
             ),
-            selected = 0,
+            selected = tab,
             onSelect = { i ->
                 when (i) {
-                    1 -> if (vm.home != null) vm.goHome() else vm.openSearch()
-                    2 -> vm.openSearch()
-                    3 -> vm.openSettings()
+                    0 -> { savedOpen = false; vm.stopDrive() }
+                    1 -> { vm.stopDrive(); savedOpen = true }
+                    2 -> { savedOpen = false; vm.startDrive() }
+                    3 -> { savedOpen = false; vm.stopDrive(); vm.openSettings() }
                 }
             },
             onSearch = { vm.openSearch() },
@@ -194,6 +211,86 @@ private fun Chip(haze: HazeState, emoji: String, label: String, onClick: () -> U
     }
 }
 
+/** Saved tab: home with a live drive time, then your recent places with how far away they are. */
+@Composable
+private fun SavedPanel(vm: AppViewModel, haze: HazeState, close: () -> Unit) {
+    val me = vm.here()
+    Column(
+        Modifier.padding(horizontal = 14.dp).padding(bottom = 10.dp).fillMaxWidth()
+            .frosted(haze, RoundedCornerShape(30.dp), tint = Color(0xFF2E2842), alpha = 0.82f)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+    ) {
+        Text("Saved", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        Spacer(Modifier.height(8.dp))
+        val h = vm.home
+        SheetRow(
+            "🏠", Color(0xFFCBC2EB),
+            if (h != null && me != null && Geo.distance(me, h.pos) < 60) "You're home" else "Home",
+            when {
+                h == null -> "Tap to set your home"
+                vm.homeMinutes == 0 -> h.detail.ifBlank { h.name }
+                vm.homeMinutes != null -> "${vm.homeMinutes} min drive · ${h.detail.ifBlank { h.name }}"
+                else -> h.detail.ifBlank { h.name }
+            },
+        ) { close(); if (h != null) vm.goHome() else vm.openSearch() }
+        val recent = vm.recents.filter { r -> h == null || Geo.distance(r.pos, h.pos) > 25 }.take(5)
+        if (recent.isNotEmpty()) {
+            Text("Recent", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFCBC2EB), modifier = Modifier.padding(top = 10.dp, bottom = 2.dp))
+            recent.forEach { r ->
+                val (emoji, circle) = placeEmoji(r.kind, r.name)
+                val away = me?.let { Units.short(Geo.distance(it, r.pos)) }
+                SheetRow(emoji, circle, r.name, listOfNotNull(away, r.detail.ifBlank { null }).joinToString(" · ")) { close(); vm.open(r) }
+            }
+        } else {
+            Text("Places you look up show up here.", fontSize = 13.sp, color = Color(0xFFB8B0D0), modifier = Modifier.padding(top = 8.dp))
+        }
+    }
+}
+
+/** Drive tab: no destination, just drive. Camera follows you tilted; big speed, the street you're on, your heading. */
+@Composable
+private fun DrivePanel(vm: AppViewModel, haze: HazeState) {
+    val loc = vm.location
+    val mps = if (loc != null && loc.hasSpeed()) loc.speed.toDouble() else 0.0
+    val speed = Math.round(if (Units.imperial) mps * 2.23694 else mps * 3.6).toInt()
+    val heading = if (loc != null && loc.hasBearing() && mps > 1.5) listOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")[(((loc.bearing + 22.5f) % 360f) / 45f).toInt().coerceIn(0, 7)] else null
+    Column(
+        Modifier.padding(horizontal = 14.dp).padding(bottom = 10.dp).fillMaxWidth()
+            .frosted(haze, RoundedCornerShape(30.dp), tint = Color(0xFF2E2842), alpha = 0.82f)
+            .padding(16.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(78.dp).clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("$speed", fontSize = 30.sp, fontWeight = FontWeight.Black, color = Color(0xFF241C4A), lineHeight = 30.sp)
+                    Text(if (Units.imperial) "mph" else "km/h", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF5B5280))
+                }
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text("🚗 Driving on", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFCBC2EB))
+                Text(vm.driveStreet ?: "Finding your road…", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(listOfNotNull(heading?.let { "Heading $it" }, vm.hereName).joinToString(" · ").ifBlank { "Just drive — no destination needed" }, fontSize = 13.sp, color = Color(0xFFB8B0D0), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Box(
+                Modifier.size(46.dp).clip(CircleShape).background(Color(0xFFE5484D).copy(alpha = 0.85f)).squish { vm.stopDrive() },
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.Rounded.Close, "Stop driving", tint = Color.White, modifier = Modifier.size(22.dp)) }
+        }
+        if (vm.home != null && vm.homeMinutes != 0) {
+            Spacer(Modifier.height(12.dp))
+            Row(
+                Modifier.fillMaxWidth().height(46.dp).clip(CircleShape).background(Color(0xFFCBC2EB))
+                    .squish { vm.stopDrive(); vm.goHome() },
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("🏠  Take me home" + (vm.homeMinutes?.let { " · $it min" } ?: ""), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color(0xFF241C4A))
+            }
+        }
+    }
+}
+
 @Composable
 private fun SheetRow(emoji: String, circle: Color, title: String, sub: String, onClick: () -> Unit) {
     Row(
@@ -203,8 +300,8 @@ private fun SheetRow(emoji: String, circle: Color, title: String, sub: String, o
     ) {
         Box(Modifier.size(42.dp).clip(CircleShape).background(circle), contentAlignment = Alignment.Center) { Text(emoji, fontSize = 18.sp) }
         Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (sub.isNotBlank()) Text(sub, fontSize = 13.sp, color = C.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (sub.isNotBlank()) Text(sub, fontSize = 13.sp, color = Color(0xFFB8B0D0), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

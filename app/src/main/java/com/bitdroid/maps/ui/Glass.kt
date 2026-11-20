@@ -204,32 +204,41 @@ fun GlassDock(
     ) {
         BoxWithConstraints(Modifier.weight(1f).height(68.dp).then(tonal).padding(7.dp)) {
             val density = LocalDensity.current
-            val tabW = with(density) { maxWidth.toPx() } / tabs.size
-            val x = remember { Animatable(selected * tabW) }
+            val widthPx = with(density) { maxWidth.toPx() }
+            // Lens position in tab units. The tab under the lens grows so its label always fits.
+            val pos = remember { Animatable(selected.toFloat()) }
             var dragging by remember { mutableStateOf(false) }
             val scope = rememberCoroutineScope()
-            LaunchedEffect(selected, tabW) {
-                if (!dragging) x.animateTo(selected * tabW, spring(dampingRatio = 0.68f, stiffness = Spring.StiffnessMediumLow))
+            LaunchedEffect(selected) {
+                if (!dragging) pos.animateTo(selected.toFloat(), spring(dampingRatio = 0.68f, stiffness = Spring.StiffnessMediumLow))
             }
+            val p = pos.value
+            val weights = List(tabs.size) { i -> 1f + 0.9f * (1f - abs(i - p)).coerceIn(0f, 1f) }
+            val unit = widthPx / weights.sum()
+            val lo = p.toInt().coerceIn(0, tabs.lastIndex)
+            val hi = (lo + 1).coerceAtMost(tabs.lastIndex)
+            val frac = p - lo
+            val lensLeft = unit * (weights.take(lo).sum() + frac * weights[lo])
+            val lensW = unit * (weights[lo] + (weights[hi] - weights[lo]) * frac)
             val wave by animateFloatAsState(if (dragging) 0.07f else 0f, spring(dampingRatio = 0.5f, stiffness = 300f), label = "wave")
             val spin = rememberInfiniteTransition(label = "ripple")
             val phase by spin.animateFloat(0f, (2 * PI).toFloat(), infiniteRepeatable(tween(900, easing = LinearEasing)), label = "phase")
-            val hover = (x.value / tabW).roundToInt().coerceIn(0, tabs.lastIndex)
+            val hover = p.roundToInt().coerceIn(0, tabs.lastIndex)
             Box(
-                Modifier.offset { IntOffset(x.value.roundToInt(), 0) }
-                    .width(with(density) { tabW.toDp() }).fillMaxHeight()
+                Modifier.offset { IntOffset(lensLeft.roundToInt(), 0) }
+                    .width(with(density) { lensW.toDp() }).fillMaxHeight()
                     .graphicsLayer { val s2 = 1f + wave * 0.8f; scaleX = s2; scaleY = s2 }
                     .clip(WavyPill(wave, phase))
                     .background(Lav),
             )
             Row(
-                Modifier.fillMaxSize().pointerInput(tabs.size, tabW) {
+                Modifier.fillMaxSize().pointerInput(tabs.size, widthPx) {
                     detectHorizontalDragGestures(
                         onDragStart = { dragging = true },
                         onDragEnd = {
-                            val target = (x.value / tabW).roundToInt().coerceIn(0, tabs.lastIndex)
+                            val target = pos.value.roundToInt().coerceIn(0, tabs.lastIndex)
                             dragging = false
-                            scope.launch { x.animateTo(target * tabW, spring(dampingRatio = 0.68f, stiffness = Spring.StiffnessMediumLow)) }
+                            scope.launch { pos.animateTo(target.toFloat(), spring(dampingRatio = 0.68f, stiffness = Spring.StiffnessMediumLow)) }
                             if (target != currentSelected) {
                                 view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
                                 currentOnSelect(target)
@@ -237,18 +246,19 @@ fun GlassDock(
                         },
                         onDragCancel = {
                             dragging = false
-                            scope.launch { x.animateTo(currentSelected * tabW) }
+                            scope.launch { pos.animateTo(currentSelected.toFloat()) }
                         },
                     ) { change, dx ->
                         change.consume()
-                        scope.launch { x.snapTo((x.value + dx).coerceIn(0f, tabW * tabs.lastIndex)) }
+                        val avg = widthPx / (tabs.size + 0.9f)
+                        scope.launch { pos.snapTo((pos.value + dx / avg).coerceIn(0f, tabs.lastIndex.toFloat())) }
                     }
                 },
             ) {
                 tabs.forEachIndexed { i, t ->
-                    val on = if (dragging) i == hover else i == selected
+                    val on = i == hover
                     Row(
-                        Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(24.dp)).squish {
+                        Modifier.weight(weights[i]).fillMaxHeight().clip(RoundedCornerShape(24.dp)).squish {
                             if (i != selected) view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
                             onSelect(i)
                         },
@@ -258,8 +268,8 @@ fun GlassDock(
                         Icon(t.icon, t.label, tint = if (on) OnLav else Ink, modifier = Modifier.size(23.dp))
                         AnimatedVisibility(on, enter = expandHorizontally() + fadeIn(), exit = shrinkHorizontally() + fadeOut()) {
                             Row {
-                                Spacer(Modifier.width(7.dp))
-                                Text(t.label, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = OnLav, maxLines = 1)
+                                Spacer(Modifier.width(6.dp))
+                                Text(t.label, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = OnLav, maxLines = 1, softWrap = false)
                             }
                         }
                     }

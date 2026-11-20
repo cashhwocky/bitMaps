@@ -18,7 +18,7 @@ android {
         applicationId = "com.bitdroid.maps"
         minSdk = 31
         targetSdk = 35
-        versionCode = 17
+        versionCode = 18
         versionName = "0.6.0"
 
         // Live traffic: a free TomTom key from the TOMTOM_KEY repo secret (empty = no traffic, Valhalla only).

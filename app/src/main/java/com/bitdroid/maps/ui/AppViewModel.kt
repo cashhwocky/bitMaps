@@ -79,6 +79,36 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var home by mutableStateOf(recentsStore.home()); private set
     var homeMinutes by mutableStateOf<Int?>(null); private set
     var hereName by mutableStateOf<String?>(null); private set
+
+    /** Drive tab: free driving with no destination — tilted camera that follows you, live street and speed. */
+    var driveMode by mutableStateOf(false); private set
+    var driveStreet by mutableStateOf<String?>(null); private set
+    private var driveStreetAt: LatLon? = null
+
+    fun startDrive() {
+        driveMode = true
+        following = true
+        driveStreetAt = null
+        here()?.let(::updateDriveStreet)
+        cameraTick++
+    }
+
+    fun stopDrive() {
+        if (!driveMode) return
+        driveMode = false
+        cameraTick++
+    }
+
+    private fun updateDriveStreet(me: LatLon) {
+        if (driveStreetAt != null && Geo.distance(driveStreetAt!!, me) < 60) return
+        driveStreetAt = me
+        viewModelScope.launch {
+            runCatching { Photon.reverse(me.lat, me.lon) }.getOrNull()?.let { p ->
+                // "123 Ethan's Way" → "Ethan's Way"
+                driveStreet = p.name.replace(Regex("^\\d+[A-Za-z]?\\s+"), "")
+            }
+        }
+    }
     private var hereNameAt: LatLon? = null
     private var homeEtaAt = 0L
 
@@ -443,6 +473,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private fun onLocation(loc: Location) {
         val first = location == null
         location = loc
+        if (driveMode && screen == Screen.EXPLORE) updateDriveStreet(LatLon(loc.latitude, loc.longitude))
         if (first && screen == Screen.EXPLORE) cameraTick++
         if (screen == Screen.EXPLORE) refreshTiles()
         if (screen == Screen.ROUTE && routes.isEmpty() && !routing && routeError != null) computeRoutes()

@@ -123,7 +123,7 @@ fun BitMapsApp(vm: AppViewModel, controller: MapController, onExit: () -> Unit) 
         val loc = (if (vm.screen == Screen.NAV) vm.navLocation else null) ?: vm.location ?: return@LaunchedEffect
         controller.whenReady {
             controller.showLocation(loc)
-            if (vm.screen == Screen.NAV && vm.following) {
+            if ((vm.screen == Screen.NAV || (vm.screen == Screen.EXPLORE && vm.driveMode)) && vm.following) {
                 if (!controller.isFollowing) controller.follow(vm.settings.tilt3d) else controller.keepClose()
             }
         }
@@ -132,7 +132,8 @@ fun BitMapsApp(vm: AppViewModel, controller: MapController, onExit: () -> Unit) 
         controller.onTrackingDismissed = { vm.following = false }
         controller.whenReady {
             when (vm.screen) {
-                Screen.EXPLORE, Screen.SEARCH -> vm.location?.let { controller.flyTo(it.latitude, it.longitude, 15.5, 0) }
+                Screen.EXPLORE, Screen.SEARCH -> if (vm.screen == Screen.EXPLORE && vm.driveMode) controller.follow(vm.settings.tilt3d)
+                    else { if (controller.isFollowing) controller.stopFollowing(); vm.location?.let { controller.flyTo(it.latitude, it.longitude, 15.5, 0) } }
                 Screen.PLACE -> vm.place?.let { controller.flyTo(it.lat, it.lon, 16.0, 420) }
                 Screen.ROUTE -> vm.routes.getOrNull(vm.selected)?.let { r -> controller.fit(vm.routes.flatMap { it.points }.ifEmpty { r.points }, 220, 380) }
                 Screen.NAV -> {
