@@ -72,6 +72,8 @@ class MapController(private val context: Context, private var pal: MapPalette, p
     private var edge = 0.0005f
     private var trailAnim: android.animation.ValueAnimator? = null
     private var destSrc: GeoJsonSource? = null
+    private var trafficSrc: GeoJsonSource? = null
+    private var labelSrc: GeoJsonSource? = null
     private val pending = ArrayList<() -> Unit>()
     /** Called when the user drags the map while it was following them. */
     var onTrackingDismissed: (() -> Unit)? = null
@@ -91,8 +93,8 @@ class MapController(private val context: Context, private var pal: MapPalette, p
         }
         m.uiSettings.isLogoEnabled = false
         m.uiSettings.isCompassEnabled = false
-        m.uiSettings.attributionGravity = Gravity.BOTTOM or Gravity.START
-        m.uiSettings.setAttributionMargins(dp(12), 0, 0, dp(132)) // sits above the floating tab bar
+        m.uiSettings.attributionGravity = Gravity.TOP or Gravity.END
+        m.uiSettings.setAttributionMargins(0, dp(150), dp(14), 0) // under the search bar, clear of the sheets
         m.uiSettings.isAttributionEnabled = true
         ready = true
         pending.forEach { it() }
@@ -303,6 +305,36 @@ class MapController(private val context: Context, private var pal: MapPalette, p
                 PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
             ),
         )
+        // Live traffic painted on top of the route: orange = slow, red = jammed, dark red = stopped.
+        val traffic = GeoJsonSource("bm-traffic", GeoJsonOptions())
+        s.addSource(traffic)
+        trafficSrc = traffic
+        below(
+            LineLayer("bm-traffic-line", "bm-traffic").withProperties(
+                PropertyFactory.lineColor(
+                    Expression.match(
+                        Expression.get("lvl"), Expression.color(0xFFFFB454.toInt()),
+                        Expression.stop(2, Expression.color(0xFFFF6B57.toInt())),
+                        Expression.stop(3, Expression.color(0xFFC62828.toInt())),
+                    ),
+                ),
+                PropertyFactory.lineWidth(byZoom(6f, 20f)),
+                PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
+            ),
+        )
+        // "24 min" bubbles on each route (Route screen).
+        val labels = GeoJsonSource("bm-labels", GeoJsonOptions())
+        s.addSource(labels)
+        labelSrc = labels
+        s.addLayer(
+            SymbolLayer("bm-label-pills", "bm-labels").withProperties(
+                PropertyFactory.iconImage(Expression.get("img")),
+                PropertyFactory.iconAllowOverlap(true),
+                PropertyFactory.iconIgnorePlacement(true),
+                PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM),
+            ),
+        )
         pinDot = CircleLayer("bm-pin-dot", "bm-pin")
         s.addLayer(
             pinDot!!.withProperties(
@@ -330,22 +362,34 @@ class MapController(private val context: Context, private var pal: MapPalette, p
     private fun line(points: List<LatLon>) =
         Feature.fromGeometry(LineString.fromLngLats(smooth(points).map { Point.fromLngLat(it.lon, it.lat) }))
 
-    /** Rounds sharp corners (two passes of Chaikin's corner cutting) so turns draw as smooth curves. */
+    /**
+     * Rounds corners only within a few meters of each bend, so turns look smooth but the line never
+     * cuts across the inside of a corner (the old smoothing pulled the line off the road at turns).
+     */
     private fun smooth(points: List<LatLon>): List<LatLon> {
-        var pts = points
-        repeat(2) {
-            if (pts.size < 3) return pts
-            val out = ArrayList<LatLon>(pts.size * 2)
-            out.add(pts.first())
-            for (i in 0 until pts.size - 1) {
-                val a = pts[i]; val b = pts[i + 1]
-                out.add(LatLon(0.75 * a.lat + 0.25 * b.lat, 0.75 * a.lon + 0.25 * b.lon))
-                out.add(LatLon(0.25 * a.lat + 0.75 * b.lat, 0.25 * a.lon + 0.75 * b.lon))
+        if (points.size < 3) return points
+        val out = ArrayList<LatLon>(points.size * 3)
+        out.add(points.first())
+        for (i in 1 until points.size - 1) {
+            val a = points[i - 1]; val b = points[i]; val c = points[i + 1]
+            val ab = com.bitdroid.maps.data.Geo.distance(a, b)
+            val bc = com.bitdroid.maps.data.Geo.distance(b, c)
+            if (ab < 0.5 || bc < 0.5) { out.add(b); continue }
+            val t1 = (minOf(4.0, ab / 3) / ab)
+            val t2 = (minOf(4.0, bc / 3) / bc)
+            val p1 = LatLon(b.lat + (a.lat - b.lat) * t1, b.lon + (a.lon - b.lon) * t1)
+            val p2 = LatLon(b.lat + (c.lat - b.lat) * t2, b.lon + (c.lon - b.lon) * t2)
+            out.add(p1)
+            // Quadratic curve through the corner, 4 steps.
+            for (k in 1..3) {
+                val t = k / 4.0
+                val u = 1 - t
+                out.add(LatLon(u * u * p1.lat + 2 * u * t * b.lat + t * t * p2.lat, u * u * p1.lon + 2 * u * t * b.lon + t * t * p2.lon))
             }
-            out.add(pts.last())
-            pts = out
+            out.add(p2)
         }
-        return pts
+        out.add(points.last())
+        return out
     }
 
     private fun GeoJsonSource.put(f: Feature?) {
@@ -358,7 +402,7 @@ class MapController(private val context: Context, private var pal: MapPalette, p
         pinSrc?.put(point(place))
     }
 
-    fun showRoutes(routes: List<Route>, selected: Int, dest: Place?) {
+    fun showRoutes(routes: List<Route>, selected: Int, dest: Place?, labels: Boolean = false) {
         trailAnim?.cancel()
         if (traveled != 0f) { traveled = 0f; refreshRouteColors() }
         val main = routes.getOrNull(selected)
@@ -367,6 +411,110 @@ class MapController(private val context: Context, private var pal: MapPalette, p
         altSrc?.setGeoJson(FeatureCollection.fromFeatures(others))
         destSrc?.put(if (main != null) point(dest) else null)
         pinSrc?.put(if (main != null) null else point(dest))
+        // Traffic on the chosen route.
+        val jams = main?.traffic.orEmpty().mapNotNull { sp ->
+            val seg = main!!.points.subList(sp.from.coerceIn(0, main.points.lastIndex), (sp.to + 1).coerceIn(0, main.points.size))
+            if (seg.size < 2) null
+            else Feature.fromGeometry(LineString.fromLngLats(smooth(seg).map { Point.fromLngLat(it.lon, it.lat) })).also { it.addNumberProperty("lvl", sp.value) }
+        }
+        trafficSrc?.setGeoJson(FeatureCollection.fromFeatures(jams))
+        showLabels(if (labels) routes else emptyList(), selected)
+    }
+
+    /** Pill bubbles ("24 min", "+3 min") placed where each route is easy to tell apart. */
+    private fun showLabels(routes: List<Route>, selected: Int) {
+        val s = style ?: return
+        val feats = ArrayList<Feature>()
+        val best = routes.getOrNull(selected)
+        routes.forEachIndexed { i, r ->
+            if (r.points.size < 2) return@forEachIndexed
+            // Selected route: a point about 40% along. Others: the point farthest from the selected route.
+            val at = if (i == selected || best == null) r.points[(r.points.size * 0.4).toInt()]
+            else r.points.filterIndexed { k, _ -> k % 5 == 0 }.maxByOrNull { p -> best.points.filterIndexed { k, _ -> k % 8 == 0 }.minOf { com.bitdroid.maps.data.Geo.distance(it, p) } } ?: r.points[r.points.size / 2]
+            val text = com.bitdroid.maps.data.Units.duration(r.durationS)
+            val sub = when {
+                i == selected && routes.size > 1 && i == 0 -> "Fastest"
+                best != null && i != selected -> {
+                    val d = Math.round((r.durationS - best.durationS) / 60.0).toInt()
+                    if (d > 0) "+$d min" else if (d < 0) "$d min" else "Same time"
+                }
+                else -> null
+            }
+            val id = "bm-pill-$i-${if (i == selected) 1 else 0}"
+            s.addImage(id, pillBitmap(text, sub, i == selected))
+            feats.add(Feature.fromGeometry(Point.fromLngLat(at.lon, at.lat)).also { it.addStringProperty("img", id) })
+        }
+        labelSrc?.setGeoJson(FeatureCollection.fromFeatures(feats))
+    }
+
+    private fun pillBitmap(text: String, sub: String?, selected: Boolean): android.graphics.Bitmap {
+        val d = density
+        val big = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = 15 * d; typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, 700, false)
+            color = if (selected) pal.onPill else pal.labelStrong
+        }
+        val small = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = 11 * d; typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, 600, false)
+            color = if (selected) pal.onPill else pal.label
+        }
+        val w = (maxOf(big.measureText(text), sub?.let { small.measureText(it) } ?: 0f) + 24 * d).toInt()
+        val h = ((if (sub != null) 46 else 32) * d).toInt()
+        val tail = (7 * d).toInt()
+        val bmp = android.graphics.Bitmap.createBitmap(w, h + tail, android.graphics.Bitmap.Config.ARGB_8888)
+        val c = android.graphics.Canvas(bmp)
+        val bg = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = if (selected) pal.pill else pal.pillAlt }
+        c.drawRoundRect(android.graphics.RectF(0f, 0f, w.toFloat(), h.toFloat()), 14 * d, 14 * d, bg)
+        val path = android.graphics.Path().apply {
+            moveTo(w / 2f - 7 * d, h.toFloat()); lineTo(w / 2f, (h + tail).toFloat()); lineTo(w / 2f + 7 * d, h.toFloat()); close()
+        }
+        c.drawPath(path, bg)
+        c.drawText(text, 12 * d, if (sub != null) 21 * d else 21 * d, big)
+        if (sub != null) c.drawText(sub, 12 * d, 37 * d, small)
+        return bmp
+    }
+
+    // ---------- layers (satellite, live traffic everywhere, 3D buildings) ----------
+
+    private var satOn = false
+    private var flowOn = false
+
+    fun setLayers(satellite: Boolean, traffic: Boolean, buildings3d: Boolean, tomtomKey: String?) = whenReady {
+        val s = style ?: return@whenReady
+        val key = tomtomKey?.let { java.net.URLEncoder.encode(it, "UTF-8") }
+        // Satellite photos (TomTom, same free key) under the roads and labels.
+        if (satellite && key != null && !satOn) runCatching {
+            s.addSource(org.maplibre.android.style.sources.RasterSource(
+                "bm-sat-src",
+                org.maplibre.android.style.sources.TileSet("2.2.0", "https://api.tomtom.com/map/1/tile/sat/main/{z}/{x}/{y}.jpg?key=$key"),
+                256,
+            ))
+            val firstLine = s.layers.firstOrNull { it is LineLayer }?.id
+            val layer = org.maplibre.android.style.layers.RasterLayer("bm-sat", "bm-sat-src")
+            if (firstLine != null) s.addLayerBelow(layer, firstLine) else s.addLayerBelow(layer, "bm-alt-line")
+            satOn = true
+        }
+        if ((!satellite || key == null) && satOn) {
+            runCatching { s.removeLayer("bm-sat"); s.removeSource("bm-sat-src") }
+            satOn = false
+        }
+        // Live traffic on every road (TomTom flow tiles).
+        if (traffic && key != null && !flowOn) runCatching {
+            s.addSource(org.maplibre.android.style.sources.RasterSource(
+                "bm-flow-src",
+                org.maplibre.android.style.sources.TileSet("2.2.0", "https://api.tomtom.com/traffic/map/4/tile/flow/relative0-dark/{z}/{x}/{y}.png?key=$key&tileSize=256&thickness=6"),
+                256,
+            ))
+            s.addLayerBelow(org.maplibre.android.style.layers.RasterLayer("bm-flow", "bm-flow-src").withProperties(PropertyFactory.rasterOpacity(0.85f)), "bm-alt-line")
+            flowOn = true
+        }
+        if ((!traffic || key == null) && flowOn) {
+            runCatching { s.removeLayer("bm-flow"); s.removeSource("bm-flow-src") }
+            flowOn = false
+        }
+        // 3D buildings: the style's own extrusion layers.
+        s.layers.filterIsInstance<FillExtrusionLayer>().forEach {
+            it.setProperties(PropertyFactory.visibility(if (buildings3d) Property.VISIBLE else Property.NONE))
+        }
     }
 
     // ---------- camera ----------

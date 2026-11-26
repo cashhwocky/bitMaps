@@ -81,7 +81,8 @@ object C {
     /** Which look is active. */
     var style = com.bitdroid.maps.data.AppStyle.MAPS; private set
     /** True for Material You (wavy cookie shapes); otherwise plain circles. */
-    val expressive get() = style == com.bitdroid.maps.data.AppStyle.MATERIAL_YOU
+    /** The old bitHome cookie shapes are retired: plain Material 3 shapes everywhere. */
+    val expressive get() = false
     private val classic get() = style == com.bitdroid.maps.data.AppStyle.CLASSIC
 
     val gradient: Brush get() = if (!classic) SolidColor(Accent) else Brush.linearGradient(listOf(Color(0xFF7C4DFF), Color(0xFF2F6BFF)))
@@ -170,12 +171,56 @@ object C {
 }
 
 /** The wallpaper color scheme (Android 12+), dark. */
-fun bitScheme(context: Context): ColorScheme = dynamicDarkColorScheme(context)
+fun bitScheme(context: Context, style: com.bitdroid.maps.data.AppStyle = com.bitdroid.maps.data.AppStyle.MATERIAL_YOU): ColorScheme = when (style) {
+    com.bitdroid.maps.data.AppStyle.MATERIAL_YOU -> dynamicDarkColorScheme(context)
+    com.bitdroid.maps.data.AppStyle.MAPS -> VioletScheme
+    com.bitdroid.maps.data.AppStyle.CLASSIC -> BlueScheme
+}
+
+/** Material 3 dark tones from a lilac seed (bitDroid). */
+private val VioletScheme = androidx.compose.material3.darkColorScheme(
+    primary = Color(0xFFD0BCFF), onPrimary = Color(0xFF381E72),
+    primaryContainer = Color(0xFF4F378B), onPrimaryContainer = Color(0xFFEADDFF),
+    secondary = Color(0xFFCCC2DC), onSecondary = Color(0xFF332D41),
+    secondaryContainer = Color(0xFF4A4458), onSecondaryContainer = Color(0xFFE8DEF8),
+    tertiary = Color(0xFFEFB8C8), onTertiary = Color(0xFF492532),
+    tertiaryContainer = Color(0xFF633B48), onTertiaryContainer = Color(0xFFFFD8E4),
+    background = Color(0xFF141218), onBackground = Color(0xFFE6E0E9),
+    surface = Color(0xFF141218), onSurface = Color(0xFFE6E0E9),
+    surfaceVariant = Color(0xFF49454F), onSurfaceVariant = Color(0xFFCAC4D0),
+    outline = Color(0xFF938F99), outlineVariant = Color(0xFF49454F),
+    surfaceContainerLowest = Color(0xFF0F0D13), surfaceContainerLow = Color(0xFF1D1B20),
+    surfaceContainer = Color(0xFF211F26), surfaceContainerHigh = Color(0xFF2B2930),
+    surfaceContainerHighest = Color(0xFF36343B),
+    error = Color(0xFFF2B8B5), onError = Color(0xFF601410),
+    errorContainer = Color(0xFF8C1D18), onErrorContainer = Color(0xFFF9DEDC),
+)
+
+/** Material 3 dark tones from a blue seed. */
+private val BlueScheme = androidx.compose.material3.darkColorScheme(
+    primary = Color(0xFFA8C7FA), onPrimary = Color(0xFF062E6F),
+    primaryContainer = Color(0xFF0842A0), onPrimaryContainer = Color(0xFFD3E3FD),
+    secondary = Color(0xFFBFC6DC), onSecondary = Color(0xFF293041),
+    secondaryContainer = Color(0xFF3F4759), onSecondaryContainer = Color(0xFFDBE2F9),
+    tertiary = Color(0xFF9DD4B0), onTertiary = Color(0xFF003920),
+    tertiaryContainer = Color(0xFF125234), onTertiaryContainer = Color(0xFFB9F0CB),
+    background = Color(0xFF111318), onBackground = Color(0xFFE2E2E9),
+    surface = Color(0xFF111318), onSurface = Color(0xFFE2E2E9),
+    surfaceVariant = Color(0xFF44474F), onSurfaceVariant = Color(0xFFC4C6D0),
+    outline = Color(0xFF8E9099), outlineVariant = Color(0xFF44474F),
+    surfaceContainerLowest = Color(0xFF0C0E13), surfaceContainerLow = Color(0xFF191C20),
+    surfaceContainer = Color(0xFF1D2024), surfaceContainerHigh = Color(0xFF282A2F),
+    surfaceContainerHighest = Color(0xFF33353A),
+    error = Color(0xFFF2B8B5), onError = Color(0xFF601410),
+    errorContainer = Color(0xFF8C1D18), onErrorContainer = Color(0xFFF9DEDC),
+)
 
 /** Map colors that match the theme. */
 data class MapPalette(
     val bg: Int, val block: Int, val road: Int, val roadMajor: Int, val water: Int, val park: Int,
     val label: Int, val labelStrong: Int, val routeStart: Int, val routeEnd: Int, val alt: Int, val pin: Int,
+    /** Route time bubbles: chosen route pill + its text, other routes' pill. */
+    val pill: Int = routeEnd, val onPill: Int = bg, val pillAlt: Int = road,
 )
 
 /** The original dark map colors (Classic style). */
@@ -192,11 +237,7 @@ val mapsMapPalette = MapPalette(
     routeStart = 0xFF8F74F0.toInt(), routeEnd = 0xFFB9A4F0.toInt(), alt = 0xFF5A5568.toInt(), pin = 0xFFB9A4F0.toInt(),
 )
 
-fun paletteFor(style: com.bitdroid.maps.data.AppStyle, context: Context): MapPalette = when (style) {
-    com.bitdroid.maps.data.AppStyle.CLASSIC -> classicMapPalette
-    com.bitdroid.maps.data.AppStyle.MAPS -> mapsMapPalette
-    com.bitdroid.maps.data.AppStyle.MATERIAL_YOU -> mapPalette(bitScheme(context))
-}
+fun paletteFor(style: com.bitdroid.maps.data.AppStyle, context: Context): MapPalette = mapPalette(bitScheme(context, style))
 
 fun mapPalette(s: ColorScheme) = MapPalette(
     bg = lerp(s.surface, s.surfaceContainerLow, 0.6f).toArgb(),
@@ -210,7 +251,10 @@ fun mapPalette(s: ColorScheme) = MapPalette(
     routeStart = lerp(s.primary, s.primaryContainer, 0.45f).toArgb(),
     routeEnd = lerp(s.primary, Color.White, 0.35f).toArgb(),
     alt = s.outline.toArgb(),
-    pin = s.primary.toArgb(),
+    pin = s.tertiary.toArgb(),
+    pill = s.primary.toArgb(),
+    onPill = s.onPrimary.toArgb(),
+    pillAlt = s.surfaceContainerHighest.toArgb(),
 )
 
 @OptIn(ExperimentalTextApi::class)
@@ -224,12 +268,8 @@ val Display: FontFamily = Body
 
 @Composable
 fun BitTheme(style: com.bitdroid.maps.data.AppStyle = com.bitdroid.maps.data.AppStyle.MAPS, content: @Composable () -> Unit) {
-    val scheme = bitScheme(LocalContext.current)
-    when (style) {
-        com.bitdroid.maps.data.AppStyle.CLASSIC -> C.applyClassic()
-        com.bitdroid.maps.data.AppStyle.MAPS -> C.applyMaps()
-        com.bitdroid.maps.data.AppStyle.MATERIAL_YOU -> C.apply(scheme)
-    }
+    val scheme = bitScheme(LocalContext.current, style)
+    C.apply(scheme)
     MaterialTheme(colorScheme = scheme) {
         CompositionLocalProvider(LocalTextStyle provides TextStyle(fontFamily = Body, color = C.Text), content = content)
     }

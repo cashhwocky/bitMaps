@@ -31,6 +31,34 @@ class Recents(context: Context) {
         prefs.edit().apply { if (p == null) remove("home") else putString("home", toJson(p).toString()) }.apply()
     }
 
+    /** Saved Work place (or null). */
+    fun work(): Place? = runCatching { prefs.getString("work", null)?.let { fromJson(JSONObject(it)) } }.getOrNull()
+
+    fun setWork(p: Place?) {
+        prefs.edit().apply { if (p == null) remove("work") else putString("work", toJson(p).toString()) }.apply()
+    }
+
+    /** Starred places, newest first. */
+    fun saved(): List<Place> = runCatching {
+        val arr = JSONArray(prefs.getString("saved", "[]"))
+        (0 until arr.length()).map { fromJson(arr.getJSONObject(it)) }
+    }.getOrDefault(emptyList())
+
+    fun setSaved(list: List<Place>) {
+        val arr = JSONArray()
+        list.forEach { arr.put(toJson(it)) }
+        prefs.edit().putString("saved", arr.toString()).apply()
+    }
+
+    /** Lifetime driving stats shown on the You tab. */
+    fun stats(): Triple<Int, Double, Double> =
+        Triple(prefs.getInt("trips", 0), prefs.getFloat("meters", 0f).toDouble(), prefs.getFloat("seconds", 0f).toDouble())
+
+    fun addTrip(meters: Double, seconds: Double) {
+        val (t, m, s) = stats()
+        prefs.edit().putInt("trips", t + 1).putFloat("meters", (m + meters).toFloat()).putFloat("seconds", (s + seconds).toFloat()).apply()
+    }
+
     private fun toJson(it: Place) = JSONObject().put("id", it.id).put("name", it.name).put("detail", it.detail)
         .put("category", it.category).put("kind", it.kind).put("lat", it.lat).put("lon", it.lon)
 

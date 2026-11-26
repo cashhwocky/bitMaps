@@ -28,6 +28,8 @@ data class Step(val progress: Progress, val speech: String?, val offRoute: Boole
  */
 class Navigator(val route: Route) {
     private var segment = 0
+    /** Index of the route segment you're on (for speed limits and "along the route" search). */
+    val segmentIndex get() = segment
     private var target = 1
     /** 0 = nothing said for this turn yet, 1 = early heads-up said, 2 = "turn now" said. */
     private var stage = 0

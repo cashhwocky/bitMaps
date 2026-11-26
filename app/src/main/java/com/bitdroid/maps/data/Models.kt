@@ -52,7 +52,18 @@ class Route(
     val via: String?,
     /** Extra time from live traffic (TomTom), or null when the route has no traffic data. */
     val trafficDelayS: Double? = null,
+    /** Slow stretches (point index ranges into [points]); level 1 = slow, 2 = queuing, 3 = jammed/closed. */
+    val traffic: List<Span> = emptyList(),
+    /** Speed limits along the route (value = km/h). */
+    val limits: List<Span> = emptyList(),
 ) {
+    /** Same route with another shape/turns, keeping times and traffic info mapped onto the new shape. */
+    fun withShape(pts: List<LatLon>, man: List<Maneuver>, viaName: String?): Route =
+        Route(pts, man, distanceM, durationS, viaName ?: via, trafficDelayS, Span.remap(traffic, points, pts), Span.remap(limits, points, pts))
+
+    /** Speed limit (km/h) at a point index, or null. */
+    fun limitAt(i: Int): Int? = limits.firstOrNull { i >= it.from && i <= it.to }?.value
+
     /** Distance along the route at each shape point, in meters. */
     val cumulative: DoubleArray = DoubleArray(points.size).also { c ->
         for (i in 1 until points.size) c[i] = c[i - 1] + Geo.distance(points[i - 1], points[i])
@@ -105,4 +116,34 @@ object Units {
     }
 
     private fun roundTo(v: Double, step: Int): Int = (Math.round(v / step) * step).toInt()
+}
+
+
+/** A stretch of a route between two shape-point indexes, with a value (traffic level or speed limit). */
+data class Span(val from: Int, val to: Int, val value: Int) {
+    companion object {
+        /** Moves spans from one route shape onto another shape of the same route (nearest points, in order). */
+        fun remap(spans: List<Span>, old: List<LatLon>, new: List<LatLon>): List<Span> {
+            if (spans.isEmpty() || old.isEmpty() || new.size < 2) return emptyList()
+            var cursor = 0
+            fun nearest(p: LatLon): Int {
+                var best = cursor
+                var bd = Double.MAX_VALUE
+                // Search forward from the last match so loops and overlaps don't jump backwards.
+                val end = minOf(new.size - 1, cursor + 4000)
+                for (i in cursor..end) {
+                    val d = Geo.distance(p, new[i])
+                    if (d < bd) { bd = d; best = i }
+                }
+                return best
+            }
+            return spans.sortedBy { it.from }.mapNotNull { s ->
+                val a = nearest(old[s.from.coerceIn(0, old.size - 1)])
+                cursor = a
+                val b = nearest(old[s.to.coerceIn(0, old.size - 1)])
+                cursor = b
+                if (b > a) Span(a, b, s.value) else null
+            }
+        }
+    }
 }

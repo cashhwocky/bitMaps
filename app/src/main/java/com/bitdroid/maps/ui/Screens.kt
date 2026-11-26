@@ -91,7 +91,7 @@ fun BitMapsApp(vm: AppViewModel, controller: MapController, onExit: () -> Unit) 
     LaunchedEffect(vm.screen, vm.routes, vm.selected, vm.place) {
         controller.whenReady {
             when (vm.screen) {
-                Screen.ROUTE, Screen.NAV -> controller.showRoutes(vm.routes, vm.selected, vm.place)
+                Screen.ROUTE, Screen.NAV -> controller.showRoutes(vm.routes, vm.selected, vm.place, labels = vm.screen == Screen.ROUTE)
                 Screen.PLACE -> { controller.showRoutes(emptyList(), 0, null); controller.showPin(vm.place) }
                 Screen.SETTINGS, Screen.VOICE, Screen.SETUP -> {}
                 else -> { controller.showRoutes(emptyList(), 0, null); controller.showPin(null) }
@@ -103,6 +103,10 @@ fun BitMapsApp(vm: AppViewModel, controller: MapController, onExit: () -> Unit) 
     LaunchedEffect(vm.settings.appStyle) {
         val pal = paletteFor(vm.settings.appStyle, appContext)
         controller.whenReady { controller.applyPalette(pal) }
+    }
+    // Map layers (satellite, traffic on every road, 3D buildings).
+    LaunchedEffect(vm.settings.satellite, vm.settings.trafficLayer, vm.settings.buildings3d) {
+        controller.setLayers(vm.settings.satellite, vm.settings.trafficLayer, vm.settings.buildings3d, vm.searchKey())
     }
     // Arrow or car for your position.
     LaunchedEffect(vm.settings.vehicle) {
@@ -133,9 +137,9 @@ fun BitMapsApp(vm: AppViewModel, controller: MapController, onExit: () -> Unit) 
         controller.whenReady {
             when (vm.screen) {
                 Screen.EXPLORE, Screen.SEARCH -> if (vm.screen == Screen.EXPLORE && vm.driveMode) controller.follow(vm.settings.tilt3d)
-                    else { if (controller.isFollowing) controller.stopFollowing(); vm.location?.let { controller.flyTo(it.latitude, it.longitude, 15.5, 0) } }
+                    else { if (controller.isFollowing) controller.stopFollowing(); vm.location?.let { controller.flyTo(it.latitude, it.longitude, 15.5, if (vm.screen == Screen.EXPLORE) 300 else 0) } }
                 Screen.PLACE -> vm.place?.let { controller.flyTo(it.lat, it.lon, 16.0, 420) }
-                Screen.ROUTE -> vm.routes.getOrNull(vm.selected)?.let { r -> controller.fit(vm.routes.flatMap { it.points }.ifEmpty { r.points }, 220, 380) }
+                Screen.ROUTE -> vm.routes.getOrNull(vm.selected)?.let { r -> controller.fit(vm.routes.flatMap { it.points }.ifEmpty { r.points }, 190, 440) }
                 Screen.NAV -> {
                     if (vm.following) controller.follow(vm.settings.tilt3d)
                     else vm.routes.firstOrNull()?.let { controller.fit(it.points, 300, 200) }
@@ -145,35 +149,15 @@ fun BitMapsApp(vm: AppViewModel, controller: MapController, onExit: () -> Unit) 
         }
     }
 
-    // On Explore the map lives inside a rounded Bloom tile; everywhere else it fills the screen.
-    val tile = vm.mapTile
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    val mapModifier = if (vm.screen == Screen.EXPLORE && tile != null && vm.settings.appStyle == com.bitdroid.maps.data.AppStyle.MATERIAL_YOU) {
-        with(density) {
-            Modifier
-                .offset { androidx.compose.ui.unit.IntOffset(tile.left.toInt(), tile.top.toInt()) }
-                .size(tile.width.toDp(), tile.height.toDp())
-                .clip(RoundedCornerShape(TileRadius))
-        }
-    } else Modifier.fillMaxSize()
-
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(C.Bg)
-            .background(androidx.compose.ui.graphics.Brush.radialGradient(listOf(C.glowA, Color.Transparent), center = androidx.compose.ui.geometry.Offset(0f, 0f), radius = 1400f))
-            .background(androidx.compose.ui.graphics.Brush.radialGradient(listOf(C.glowB, Color.Transparent), center = androidx.compose.ui.geometry.Offset(1400f, 3000f), radius = 1600f)),
-    ) {
-        val haze = remember { dev.chrisbanes.haze.HazeState() }
-        // The map is the glass source: every bar and button blurs it (bitDialer's tinted liquid glass).
-        MapSurface(controller, onLongPress = vm::dropPin, modifier = mapModifier.then(Modifier.hazeSource(haze)))
+    Box(Modifier.fillMaxSize().background(androidx.compose.material3.MaterialTheme.colorScheme.surface)) {
+        MapSurface(controller, onLongPress = vm::dropPin, modifier = Modifier.fillMaxSize())
         when (vm.screen) {
             Screen.SETUP -> SetupScreen(vm)
-            Screen.EXPLORE -> if (vm.settings.appStyle == com.bitdroid.maps.data.AppStyle.MATERIAL_YOU) Explore(vm) else ExploreMaps(vm, haze)
+            Screen.EXPLORE -> HomeM3(vm)
             Screen.SEARCH -> SearchScreen(vm)
-            Screen.PLACE -> PlaceScreen(vm)
-            Screen.ROUTE -> RouteScreen(vm)
-            Screen.NAV -> if (vm.settings.appStyle == com.bitdroid.maps.data.AppStyle.MATERIAL_YOU) NavScreen(vm) else NavMaps(vm, haze)
+            Screen.PLACE -> PlaceM3(vm)
+            Screen.ROUTE -> RouteM3(vm)
+            Screen.NAV -> NavM3(vm)
             Screen.SETTINGS -> SettingsScreen(vm)
             Screen.VOICE -> VoiceScreen(vm)
         }

@@ -10,9 +10,9 @@ enum class UnitChoice(val label: String) { AUTO("Automatic"), MILES("Miles"), KI
 
 /** Look of the whole app. */
 enum class AppStyle(val label: String, val emoji: String, val description: String) {
-    MAPS("bitMaps", "🗺️", "Clean and simple, like Google Maps (default)"),
-    MATERIAL_YOU("Material You", "🎨", "Wallpaper colors and wavy shapes, like bitDroid"),
-    CLASSIC("Classic", "🌌", "Dark with a violet-to-blue glow"),
+    MATERIAL_YOU("Wallpaper colors", "🎨", "Material You: colors from your wallpaper (default)"),
+    MAPS("bitDroid lilac", "💜", "Material You in bitDroid's lilac"),
+    CLASSIC("Ocean blue", "🌊", "Material You in a deep blue"),
 }
 
 /** What marks your position while navigating. */
@@ -63,12 +63,22 @@ class Settings(context: Context) {
     var tomtomKey by text("tomtom_key", "")
     var liveTraffic by bool("live_traffic", true)
 
+    // Map layers
+    var satellite by bool("layer_satellite", false)
+    var trafficLayer by bool("layer_traffic", false)
+    var buildings3d by bool("layer_3d", true)
+
     init {
         // 0.5.0: switch everyone once to the new Google Maps-style look and the Google-style arrow.
         if (!prefs.getBoolean("v050_look", false)) {
             prefs.edit().putBoolean("v050_look", true).putString("app_style", AppStyle.MAPS.name).putString("vehicle", Vehicle.ARROW.name).apply()
             appStyle = AppStyle.MAPS
             vehicle = Vehicle.ARROW
+        }
+        // 0.7.0: the Material You redo is the look for everyone (wallpaper colors).
+        if (!prefs.getBoolean("v070_look", false)) {
+            prefs.edit().putBoolean("v070_look", true).putString("app_style", AppStyle.MATERIAL_YOU.name).apply()
+            appStyle = AppStyle.MATERIAL_YOU
         }
         applyUnits()
         applyServers()

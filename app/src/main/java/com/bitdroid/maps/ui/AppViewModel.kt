@@ -23,6 +23,7 @@ import com.bitdroid.maps.data.Settings
 import com.bitdroid.maps.data.Updater
 import com.bitdroid.maps.data.Router
 import com.bitdroid.maps.data.Valhalla
+import com.bitdroid.maps.data.Units
 import com.bitdroid.maps.nav.LocationTracker
 import com.bitdroid.maps.nav.Music
 import com.bitdroid.maps.nav.Navigator
@@ -80,6 +81,139 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var homeMinutes by mutableStateOf<Int?>(null); private set
     var hereName by mutableStateOf<String?>(null); private set
 
+    // ---------- tabs, Work, saved places, stats ----------
+
+    /** Bottom bar on Explore: 0 Explore, 1 Saved, 2 Drive, 3 You. */
+    var tab by mutableStateOf(0); private set
+    var work by mutableStateOf(recentsStore.work()); private set
+    var workMinutes by mutableStateOf<Int?>(null); private set
+    private var workEtaAt = 0L
+    var saved by mutableStateOf(recentsStore.saved()); private set
+    var stats by mutableStateOf(recentsStore.stats()); private set
+    /** Map layers sheet. */
+    var showLayers by mutableStateOf(false)
+
+    fun selectTab(i: Int) {
+        if (i == tab) return
+        if (tab == 2) stopDrive()
+        tab = i
+        if (i == 2) startDrive()
+    }
+
+    fun saveWork(p: Place?) {
+        recentsStore.setWork(p)
+        work = p
+        workMinutes = null
+        workEtaAt = 0L
+        refreshTiles()
+    }
+
+    fun isWork(p: Place) = work?.let { Geo.distance(it.pos, p.pos) < 25 } == true
+    fun isSaved(p: Place) = saved.any { it.id == p.id || Geo.distance(it.pos, p.pos) < 15 }
+
+    fun toggleSaved(p: Place) {
+        saved = if (isSaved(p)) saved.filterNot { it.id == p.id || Geo.distance(it.pos, p.pos) < 15 } else listOf(p) + saved
+        recentsStore.setSaved(saved)
+    }
+
+    private fun leaveDrive() { if (tab == 2) { stopDrive(); tab = 0 } }
+
+    fun goTo(p: Place) {
+        leaveDrive()
+        place = p
+        screen = Screen.ROUTE
+        computeRoutes()
+    }
+
+    fun goWork() { work?.let(::goTo) }
+
+    /** "Good morning" etc. — no name, just the time of day. */
+    fun greeting(): String {
+        val h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        return when (h) {
+            in 5..11 -> "Good morning"
+            in 12..16 -> "Good afternoon"
+            in 17..21 -> "Good evening"
+            else -> "Late night drive?"
+        }
+    }
+
+    fun setLayer(satellite: Boolean? = null, traffic: Boolean? = null, buildings: Boolean? = null) {
+        satellite?.let { settings.satellite = it }
+        traffic?.let { settings.trafficLayer = it }
+        buildings?.let { settings.buildings3d = it }
+    }
+
+    // ---------- navigation extras ----------
+
+    /** When you add a stop, the trip goes there first and then continues to this place. */
+    var finalStop by mutableStateOf<Place?>(null); private set
+    var alongResults by mutableStateOf<List<Place>>(emptyList()); private set
+    var alongLoading by mutableStateOf(false); private set
+    var alongLabel by mutableStateOf<String?>(null); private set
+    private var tripStartM = 0.0
+    private var tripStartAt = 0L
+
+    /** Speed limit where you are, in the app's units (mph or km/h), or null when unknown. */
+    fun speedLimit(): Int? {
+        val r = navigator?.route ?: return null
+        val kmh = r.limitAt(navigator?.segmentIndex ?: return null) ?: return null
+        return if (Units.imperial) (Math.round(kmh / 1.609344 / 5.0) * 5).toInt() else kmh
+    }
+
+    /** Finds gas / coffee / food a little way ahead on your route, closest to the route first. */
+    fun searchAlong(c: Category) {
+        val nav = navigator ?: return
+        val r = nav.route
+        val start = nav.segmentIndex
+        // Look around a point ~8 km ahead (or the destination if it's closer).
+        val aheadM = (r.cumulative.getOrElse(start) { 0.0 } + 8000).coerceAtMost(r.length)
+        val idx = r.cumulative.indexOfFirst { it >= aheadM }.let { if (it < 0) r.points.lastIndex else it }
+        val center = r.points[idx]
+        alongLabel = c.label
+        alongLoading = true
+        alongResults = emptyList()
+        viewModelScope.launch {
+            val found = runCatching {
+                val intent = Search.intent(c.label)
+                if (intent != null) Search.nearby(intent, center, searchKey(), c.query) else Photon.search(c.query, center, osmTag = c.tag, nearbyOnly = true)
+            }.getOrDefault(emptyList())
+            val ahead = r.points.subList(start.coerceIn(0, r.points.lastIndex), r.points.size).filterIndexed { i, _ -> i % 4 == 0 }
+            fun detour(p: Place) = ahead.minOfOrNull { Geo.distance(it, p.pos) } ?: Double.MAX_VALUE
+            alongResults = found.map { it to detour(it) }.filter { it.second < 3000 }.sortedBy { it.second }.take(8).map { it.first }
+            alongLoading = false
+        }
+    }
+
+    fun closeAlong() { alongLabel = null; alongResults = emptyList() }
+
+    /** Go to [stop] first, then carry on to where you were going. */
+    fun addStop(stop: Place) {
+        val dest = finalStop ?: place ?: return
+        finalStop = dest
+        closeAlong()
+        place = stop
+        val from = here() ?: return
+        viewModelScope.launch {
+            runCatching { Router.route(from, stop.pos, mode, settings.avoid, movingHeading(), trafficKey()).first() }.getOrNull()?.let { r ->
+                navigator = Navigator(r)
+                routes = listOf(r)
+                selected = 0
+                voice.say("Adding a stop at ${stop.name}.")
+                cameraTick++
+            }
+        }
+    }
+
+    /** Text you can send someone: where you're going and when you'll get there. */
+    fun etaShareText(): String? {
+        val p = progress ?: return null
+        val dest = finalStop ?: place ?: return null
+        val arrive = java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(System.currentTimeMillis() + (p.remainingS * 1000).toLong()))
+        val link = "https://www.openstreetmap.org/?mlat=${dest.lat}&mlon=${dest.lon}#map=16/${dest.lat}/${dest.lon}"
+        return "I'm on my way to ${dest.name} — I'll be there around $arrive (${Units.duration(p.remainingS)} away).\n$link"
+    }
+
     /** Drive tab: free driving with no destination — tilted camera that follows you, live street and speed. */
     var driveMode by mutableStateOf(false); private set
     var driveStreet by mutableStateOf<String?>(null); private set
@@ -117,6 +251,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun goHome() {
         val h = home ?: return
+        leaveDrive()
         place = h
         screen = Screen.ROUTE
         computeRoutes()
@@ -144,6 +279,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         parts.size >= 2 -> parts.takeLast(2).joinToString(", ") { stateShort(it) }
                         parts.size == 1 -> parts[0]
                         else -> p.name
+                    }
+                }
+            }
+        }
+        work?.let { w ->
+            val t = System.currentTimeMillis()
+            if (t - workEtaAt > 5 * 60_000) {
+                workEtaAt = t
+                if (Geo.distance(me, w.pos) < 60) workMinutes = 0
+                else viewModelScope.launch {
+                    runCatching { Router.route(me, w.pos, Mode.DRIVE, settings.avoid, null, trafficKey()).first() }.getOrNull()?.let {
+                        workMinutes = Math.round(it.durationS / 60.0).toInt().coerceAtLeast(1)
                     }
                 }
             }
@@ -444,6 +591,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         selected = 0
         progress = null
         following = true
+        tripStartAt = System.currentTimeMillis()
+        tripStartM = 0.0
         muted = !settings.voice
         voice.muted = muted
         screen = Screen.NAV
@@ -452,6 +601,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun end() {
+        // Count the trip (distance actually covered) for the You tab.
+        navigator?.let { nav ->
+            val done = (nav.route.length - (progress?.remainingM ?: nav.route.length)).coerceAtLeast(0.0)
+            if (done > 200) {
+                recentsStore.addTrip(done, (System.currentTimeMillis() - tripStartAt) / 1000.0)
+                stats = recentsStore.stats()
+            }
+        }
+        finalStop = null
+        closeAlong()
         navigator = null
         navLocation = null
         progress = null
@@ -482,7 +641,30 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         navLocation = nav.snapped
         progress = step.progress
         step.speech?.let { voice.say(it) }
-        if (step.progress.arrived) return
+        if (step.progress.arrived) {
+            val next = finalStop
+            if (next != null && !rerouting) {
+                // Reached the stop: carry on to the original destination.
+                finalStop = null
+                place = next
+                rerouting = true
+                viewModelScope.launch {
+                    try {
+                        Router.route(LatLon(loc.latitude, loc.longitude), next.pos, mode, settings.avoid, movingHeading(), trafficKey()).firstOrNull()?.let { r ->
+                            navigator = Navigator(r)
+                            routes = listOf(r)
+                            selected = 0
+                            voice.say("Continuing to ${next.name}.")
+                            cameraTick++
+                        }
+                    } catch (_: Exception) {
+                    } finally {
+                        rerouting = false
+                    }
+                }
+            }
+            return
+        }
         val now = System.currentTimeMillis()
         if (step.offRoute && !rerouting && now - lastReroute > 10_000) reroute(loc)
     }
@@ -517,14 +699,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun clearRecents() {
-        getApplication<Application>().getSharedPreferences("recents", 0).edit().clear().apply()
+        getApplication<Application>().getSharedPreferences("recents", 0).edit().remove("list").apply()
         recents = emptyList()
     }
 
     /** Returns false when there's nothing to go back to (the app should close). */
     fun back(): Boolean {
         when (screen) {
-            Screen.EXPLORE, Screen.SETUP -> return false
+            Screen.EXPLORE -> { if (tab == 0) return false; selectTab(0) }
+            Screen.SETUP -> return false
             Screen.SEARCH -> { screen = Screen.EXPLORE; query = ""; results = emptyList() }
             Screen.PLACE -> { place = null; screen = Screen.EXPLORE }
             Screen.ROUTE -> { routeJob?.cancel(); routing = false; routes = emptyList(); routeError = null; screen = Screen.PLACE; cameraTick++ }

@@ -341,7 +341,7 @@ object TomTom {
         val sb = StringBuilder("https://api.tomtom.com/routing/1/calculateRoute/")
         sb.append("${from.lat},${from.lon}:${to.lat},${to.lon}/json?key=${Http.enc(key)}")
         sb.append("&travelMode=$travel&routeType=fastest&traffic=true&instructionsType=text")
-        sb.append("&language=${Http.enc(lang)}&maxAlternatives=2&computeTravelTimeFor=all")
+        sb.append("&language=${Http.enc(lang)}&maxAlternatives=2&computeTravelTimeFor=all&sectionType=traffic")
         if (heading != null && mode == Mode.DRIVE) sb.append("&vehicleHeading=${heading.toInt()}")
         if (mode != Mode.WALK) {
             if (avoid.highways) sb.append("&avoid=motorways")
@@ -350,7 +350,10 @@ object TomTom {
         }
         // Classic TomTom routing: traffic + turn-by-turn in one call.
         try {
-            val json = JSONObject(Http.get(sb.toString()))
+            // Ask for speed limits too; if this key/version doesn't know that section, ask again without it.
+            val json = JSONObject(
+                try { Http.get("$sb&sectionType=speedLimit") } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { Http.get(sb.toString()) },
+            )
             val routes = json.optJSONArray("routes") ?: throw IOException("No route found")
             val out = ArrayList<Route>()
             for (i in 0 until routes.length()) out.add(parse(routes.getJSONObject(i)))
@@ -375,7 +378,7 @@ object TomTom {
                 val m = try { Valhalla.trace(r.points, mode) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { null }
                 // A good match covers about the same distance as TomTom's route; otherwise it's unusable.
                 if (m == null || m.points.size < 2 || kotlin.math.abs(m.distanceM - r.distanceM) > r.distanceM * 0.08) null
-                else Route(m.points, m.maneuvers, r.distanceM, r.durationS, m.via ?: r.via, r.trafficDelayS)
+                else r.withShape(m.points, m.maneuvers, m.via)
             }
         }.awaitAll()
         val plain = osm.await()
@@ -386,7 +389,7 @@ object TomTom {
                 val r = routes[i]
                 plain.minByOrNull { kotlin.math.abs(it.distanceM - r.distanceM) }
                     ?.takeIf { kotlin.math.abs(it.distanceM - r.distanceM) < r.distanceM * 0.1 }
-                    ?.let { v -> Route(v.points, v.maneuvers, r.distanceM, r.durationS, v.via ?: r.via, r.trafficDelayS) }
+                    ?.let { v -> r.withShape(v.points, v.maneuvers, v.via) }
             }
         }.distinctBy { it.points.size to it.distanceM }
         out.ifEmpty { plain.ifEmpty { routes } }
@@ -496,6 +499,30 @@ object TomTom {
             maneuvers.add(Maneuver(4, "You have arrived", null, "You have arrived.", null, null, (points.size - 1).coerceAtLeast(0), 0.0, 0.0))
         }
         val via = maneuvers.filter { it.street != null }.maxByOrNull { it.lengthM }?.street
+        val traffic = ArrayList<Span>()
+        val limits = ArrayList<Span>()
+        val sections = r.optJSONArray("sections") ?: JSONArray()
+        for (i in 0 until sections.length()) {
+            val sec = sections.getJSONObject(i)
+            val a = sec.optInt("startPointIndex", -1)
+            val b = sec.optInt("endPointIndex", -1)
+            if (a < 0 || b <= a) continue
+            when (sec.optString("sectionType")) {
+                "TRAFFIC" -> {
+                    val mag = sec.optInt("magnitudeOfDelay", 1)
+                    val level = when {
+                        sec.optString("simpleCategory") == "ROAD_CLOSURE" || mag >= 3 -> 3
+                        sec.optString("simpleCategory") == "JAM" || mag == 2 -> 2
+                        else -> 1
+                    }
+                    traffic.add(Span(a, b, level))
+                }
+                "SPEED_LIMIT" -> {
+                    val kmh = sec.optDouble("maxSpeedLimitInKmh", 0.0)
+                    if (kmh > 0) limits.add(Span(a, b, Math.round(kmh).toInt()))
+                }
+            }
+        }
         return Route(
             points = points,
             maneuvers = maneuvers,
@@ -503,6 +530,8 @@ object TomTom {
             durationS = summary.optDouble("travelTimeInSeconds", 0.0),
             via = via,
             trafficDelayS = summary.optDouble("trafficDelayInSeconds", 0.0),
+            traffic = traffic,
+            limits = limits,
         )
     }
 
