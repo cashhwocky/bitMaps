@@ -82,3 +82,26 @@ jobs:
           tag_name: ${{ inputs.release_tag || github.ref_name }}
           files: out/*-release.apk
           generate_release_notes: true
+
+      # Auto-release: when a push to main carries a new versionName (no release for it yet),
+      # publish release v<versionName> with the APK, so the in-app updater picks it up.
+      - name: Find version
+        id: ver
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v=$(ls app/build/outputs/apk/release/ | sed -n 's/^bitMaps-\(.*\)-release\.apk$/\1/p' | head -1)
+          [ -n "$v" ] || exit 0
+          echo "tag=v$v" >> "$GITHUB_OUTPUT"
+          if gh release view "v$v" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then echo "exists=1" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Auto-release new version
+        if: steps.ver.outputs.tag != '' && steps.ver.outputs.exists != '1'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: bitMaps ${{ steps.ver.outputs.tag }}
+          files: out/*-release.apk
+          generate_release_notes: true
