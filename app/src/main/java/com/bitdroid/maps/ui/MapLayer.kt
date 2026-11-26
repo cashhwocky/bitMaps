@@ -11,6 +11,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -565,7 +567,18 @@ class MapController(private val context: Context, private var pal: MapPalette, p
             lc.isLocationComponentEnabled = true
             lc.renderMode = RenderMode.NORMAL
             lc.addOnCameraTrackingChangedListener(object : OnCameraTrackingChangedListener {
-                override fun onCameraTrackingDismissed() { isFollowing = false; onTrackingDismissed?.invoke() }
+                override fun onCameraTrackingDismissed() {
+                    isFollowing = false
+                    if (!wantFollow) return
+                    if (android.os.SystemClock.uptimeMillis() - lastTouchAt < 2500) {
+                        // Your finger moved the map: let go and show Re-center.
+                        wantFollow = false
+                        onTrackingDismissed?.invoke()
+                    } else {
+                        // Something else knocked the camera loose (not you): lock straight back on.
+                        android.os.Handler(android.os.Looper.getMainLooper()).post { if (wantFollow && !isFollowing) follow(lastTilt) }
+                    }
+                }
                 override fun onCameraTrackingChanged(currentMode: Int) {}
             })
             locationOn = true
@@ -574,6 +587,10 @@ class MapController(private val context: Context, private var pal: MapPalette, p
     }
 
     var isFollowing = false
+    /** Last time a finger touched the map (set by MapSurface before the map sees the touch). */
+    var lastTouchAt = 0L
+    private var wantFollow = false
+    private var lastTilt = false
         private set
 
     /** True once you pinch/drag the map yourself during navigation; then we stop forcing the zoom. */
@@ -597,6 +614,8 @@ class MapController(private val context: Context, private var pal: MapPalette, p
         val m = map ?: return
         if (!locationOn) return
         userMoved = false
+        wantFollow = true
+        lastTilt = tilt
         val top = context.resources.displayMetrics.heightPixels * 0.42
         m.moveCamera(
             CameraUpdateFactory.newCameraPosition(
@@ -627,6 +646,7 @@ class MapController(private val context: Context, private var pal: MapPalette, p
 
     fun stopFollowing() {
         val m = map ?: return
+        wantFollow = false
         isFollowing = false
         if (!locationOn) return
         m.locationComponent.cameraMode = CameraMode.NONE
@@ -668,5 +688,17 @@ fun MapSurface(controller: MapController, onLongPress: (Double, Double) -> Unit,
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
     }
-    AndroidView(factory = { mapView }, modifier = modifier)
+    // Note every touch before the map handles it, so the app knows when YOU moved the map.
+    androidx.compose.foundation.layout.Box(
+        modifier.pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) {
+                    val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                    if (e.changes.any { it.pressed }) controller.lastTouchAt = android.os.SystemClock.uptimeMillis()
+                }
+            }
+        },
+    ) {
+        AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize())
+    }
 }
