@@ -156,7 +156,8 @@ class MapController(private val context: Context, private var pal: MapPalette, p
      */
     private fun routeGradient(glow: Boolean): Expression {
         val dim = if (glow) android.graphics.Color.TRANSPARENT
-        else androidx.core.graphics.ColorUtils.blendARGB(pal.routeStart, pal.bg, 0.6f)
+        // Driven part: plain gray, clearly different from the bright road ahead.
+        else 0xFF5C5F68.toInt()
         val p = traveled
         return when {
             p <= 0f -> Expression.interpolate(
@@ -220,7 +221,7 @@ class MapController(private val context: Context, private var pal: MapPalette, p
         pal = p
         val s = style ?: return
         recolor(s)
-        routeCasing?.setProperties(PropertyFactory.lineColor(pal.bg))
+        routeCasing?.setProperties(PropertyFactory.lineColor(0xFF0E0F12.toInt()))
         altLine?.setProperties(PropertyFactory.lineColor(pal.alt))
         pinDot?.setProperties(PropertyFactory.circleColor(pal.pin))
         destDot?.setProperties(PropertyFactory.circleColor(pal.routeEnd))
@@ -279,8 +280,8 @@ class MapController(private val context: Context, private var pal: MapPalette, p
         routeCasing = LineLayer("bm-route-casing", "bm-route")
         below(
             routeCasing!!.withProperties(
-                PropertyFactory.lineColor(pal.bg),
-                PropertyFactory.lineWidth(byZoom(10f, 30f)),
+                PropertyFactory.lineColor(0xFF0E0F12.toInt()),
+                PropertyFactory.lineWidth(byZoom(11f, 34f)),
                 PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
                 PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
             ),
@@ -300,7 +301,7 @@ class MapController(private val context: Context, private var pal: MapPalette, p
         below(
             routeLine!!.withProperties(
                 PropertyFactory.lineGradient(gradient),
-                PropertyFactory.lineWidth(byZoom(6f, 20f)),
+                PropertyFactory.lineWidth(byZoom(7f, 24f)),
                 PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
                 PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
             ),
@@ -318,7 +319,7 @@ class MapController(private val context: Context, private var pal: MapPalette, p
                         Expression.stop(3, Expression.color(0xFFC62828.toInt())),
                     ),
                 ),
-                PropertyFactory.lineWidth(byZoom(6f, 20f)),
+                PropertyFactory.lineWidth(byZoom(7f, 24f)),
                 PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
                 PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
             ),

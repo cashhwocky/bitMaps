@@ -240,17 +240,19 @@ val mapsMapPalette = MapPalette(
 fun paletteFor(style: com.bitdroid.maps.data.AppStyle, context: Context): MapPalette = mapPalette(bitScheme(context, style))
 
 fun mapPalette(s: ColorScheme) = MapPalette(
-    bg = lerp(s.surface, s.surfaceContainerLow, 0.6f).toArgb(),
-    block = s.surfaceContainer.toArgb(),
-    road = s.surfaceContainerHighest.toArgb(),
-    roadMajor = lerp(s.surfaceContainerHighest, s.primaryContainer, 0.6f).toArgb(),
-    water = lerp(s.surfaceContainerLow, Color(0xFF2B4A7A), 0.35f).toArgb(),
-    park = lerp(s.surfaceContainerLow, Color(0xFF2E5A3C), 0.3f).toArgb(),
-    label = s.onSurfaceVariant.copy(alpha = 0.75f).toArgb(),
-    labelStrong = s.onSurface.toArgb(),
-    routeStart = lerp(s.primary, s.primaryContainer, 0.45f).toArgb(),
-    routeEnd = lerp(s.primary, Color.White, 0.35f).toArgb(),
-    alt = s.outline.toArgb(),
+    // Neutral, Google-style dark map (just a hint of your color), so the route is the only bright thing on it.
+    bg = lerp(Color(0xFF1B1C20), s.surface, 0.12f).toArgb(),
+    block = lerp(Color(0xFF24252B), s.surfaceContainer, 0.12f).toArgb(),
+    road = Color(0xFF383A41).toArgb(),
+    roadMajor = Color(0xFF4B4E57).toArgb(),
+    water = Color(0xFF15243A).toArgb(),
+    park = Color(0xFF1A2A21).toArgb(),
+    label = Color(0xFF9EA2AA).toArgb(),
+    labelStrong = Color(0xFFE3E3E8).toArgb(),
+    // Route: bright and solid in your accent color.
+    routeStart = lerp(s.primary, Color.White, 0.10f).toArgb(),
+    routeEnd = lerp(s.primary, Color.White, 0.10f).toArgb(),
+    alt = Color(0xFF6E7380).toArgb(),
     pin = s.tertiary.toArgb(),
     pill = s.primary.toArgb(),
     onPill = s.onPrimary.toArgb(),
